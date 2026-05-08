@@ -5,7 +5,6 @@ export type OpinionResponse = 'agree' | 'disagree' | 'neutral';
 
 export interface Book {
   id: string;
-  user_id: string;
   title: string;
   author: string;
   cover_image_url: string | null;
@@ -19,7 +18,6 @@ export interface Book {
 
 export interface Review {
   id: string;
-  user_id: string;
   book_id: string;
   status: ReviewStatus;
   entry_type: ReviewEntryType;
@@ -33,7 +31,6 @@ export interface Review {
 
 export interface OpinionSignal {
   id: string;
-  user_id: string;
   review_id: string;
   statement_text: string;
   opinion_type: OpinionType;
@@ -43,7 +40,6 @@ export interface OpinionSignal {
 
 export interface Recommendation {
   id: string;
-  user_id: string;
   suggested_book_title: string;
   suggested_author: string;
   reason_text: string | null;
