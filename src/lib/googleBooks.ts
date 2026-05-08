@@ -20,10 +20,17 @@ export interface GoogleBooksResponse {
 }
 
 export async function searchGoogleBooks(query: string): Promise<GoogleBook[]> {
+  const apiKey = import.meta.env.VITE_GOOGLE_BOOKS_API_KEY;
   const encoded = encodeURIComponent(query);
-  const url = `https://www.googleapis.com/books/v1/volumes?q=${encoded}&maxResults=10&printType=books`;
+  const keyParam = apiKey ? `&key=${apiKey}` : '';
+  const url = `https://www.googleapis.com/books/v1/volumes?q=${encoded}&maxResults=10&printType=books${keyParam}`;
   const res = await fetch(url);
-  if (!res.ok) throw new Error('Failed to fetch from Google Books');
+  if (!res.ok) {
+    let errorBody: unknown;
+    try { errorBody = await res.json(); } catch { errorBody = await res.text(); }
+    console.error('Google Books API error', { status: res.status, statusText: res.statusText, body: errorBody });
+    throw new Error(`Google Books API returned ${res.status}: ${res.statusText}`);
+  }
   const data: GoogleBooksResponse = await res.json();
   return data.items ?? [];
 }

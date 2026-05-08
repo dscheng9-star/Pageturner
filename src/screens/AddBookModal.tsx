@@ -25,8 +25,10 @@ export default function AddBookModal({ onClose, onSelect }: AddBookModalProps) {
       const books = await searchGoogleBooks(query);
       setResults(books);
       setSearched(true);
-    } catch {
-      setError('Search failed. Please try again.');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Search failed. Please try again.';
+      console.error('Book search error:', err);
+      setError(msg);
     } finally {
       setLoading(false);
     }
