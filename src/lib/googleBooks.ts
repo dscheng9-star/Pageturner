@@ -19,7 +19,52 @@ export interface GoogleBooksResponse {
   totalItems: number;
 }
 
-export async function searchGoogleBooks(query: string): Promise<GoogleBook[]> {
+interface OpenLibraryDoc {
+  key: string;
+  title: string;
+  author_name?: string[];
+  cover_i?: number;
+  subject?: string[];
+  isbn?: string[];
+  first_publish_year?: number;
+}
+
+interface OpenLibraryResponse {
+  docs: OpenLibraryDoc[];
+}
+
+function mapOpenLibraryDoc(doc: OpenLibraryDoc): GoogleBook {
+  return {
+    id: doc.key,
+    volumeInfo: {
+      title: doc.title,
+      authors: doc.author_name ? [doc.author_name[0]] : undefined,
+      categories: doc.subject ? [doc.subject[0]] : undefined,
+      imageLinks: doc.cover_i
+        ? { thumbnail: `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg` }
+        : undefined,
+      industryIdentifiers: doc.isbn
+        ? [{ type: 'ISBN_13', identifier: doc.isbn[0] }]
+        : undefined,
+    },
+  };
+}
+
+async function searchOpenLibrary(query: string): Promise<GoogleBook[]> {
+  const encoded = encodeURIComponent(query);
+  const url = `https://openlibrary.org/search.json?q=${encoded}&limit=10`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    let errorBody: unknown;
+    try { errorBody = await res.json(); } catch { errorBody = await res.text(); }
+    console.error('Open Library API error', { status: res.status, statusText: res.statusText, body: errorBody });
+    throw new Error(`Open Library API returned ${res.status}: ${res.statusText}`);
+  }
+  const data: OpenLibraryResponse = await res.json();
+  return (data.docs ?? []).map(mapOpenLibraryDoc);
+}
+
+export async function searchBooks(query: string): Promise<GoogleBook[]> {
   const apiKey = import.meta.env.VITE_GOOGLE_BOOKS_API_KEY;
   const encoded = encodeURIComponent(query);
   const keyParam = apiKey ? `&key=${apiKey}` : '';
@@ -29,6 +74,10 @@ export async function searchGoogleBooks(query: string): Promise<GoogleBook[]> {
     let errorBody: unknown;
     try { errorBody = await res.json(); } catch { errorBody = await res.text(); }
     console.error('Google Books API error', { status: res.status, statusText: res.statusText, body: errorBody });
+    if (res.status === 429) {
+      console.warn('Google Books rate limited — falling back to Open Library');
+      return searchOpenLibrary(query);
+    }
     throw new Error(`Google Books API returned ${res.status}: ${res.statusText}`);
   }
   const data: GoogleBooksResponse = await res.json();

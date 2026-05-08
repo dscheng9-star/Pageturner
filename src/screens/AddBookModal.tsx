@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { Search, Loader2, BookOpen } from 'lucide-react';
 import Modal from '../components/Modal';
 import BookCover from '../components/BookCover';
-import { searchGoogleBooks, extractCoverUrl, extractIsbn, extractGenre, type GoogleBook } from '../lib/googleBooks';
+import { searchBooks, extractCoverUrl, extractIsbn, extractGenre, type GoogleBook } from '../lib/googleBooks';
 
 interface AddBookModalProps {
   onClose: () => void;
@@ -27,7 +27,7 @@ export default function AddBookModal({ onClose, onSelect }: AddBookModalProps) {
       setLoading(true);
       setError('');
       try {
-        const books = await searchGoogleBooks(query);
+        const books = await searchBooks(query);
         setResults(books);
         setSearched(true);
       } catch (err) {
