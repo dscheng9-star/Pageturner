@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Search, Loader2, BookOpen } from 'lucide-react';
 import Modal from '../components/Modal';
 import BookCover from '../components/BookCover';
@@ -15,23 +15,29 @@ export default function AddBookModal({ onClose, onSelect }: AddBookModalProps) {
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState('');
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  async function handleSearch(e: React.FormEvent) {
+  function handleSearch(e: React.FormEvent) {
     e.preventDefault();
     if (!query.trim()) return;
-    setLoading(true);
-    setError('');
-    try {
-      const books = await searchGoogleBooks(query);
-      setResults(books);
-      setSearched(true);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Search failed. Please try again.';
-      console.error('Book search error:', err);
-      setError(msg);
-    } finally {
-      setLoading(false);
-    }
+
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+
+    debounceTimer.current = setTimeout(async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const books = await searchGoogleBooks(query);
+        setResults(books);
+        setSearched(true);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Search failed. Please try again.';
+        console.error('Book search error:', err);
+        setError(msg);
+      } finally {
+        setLoading(false);
+      }
+    }, 500);
   }
 
   return (
