@@ -1,7 +1,8 @@
-import { useState } from 'react';
-import { Check, SkipForward } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { SkipForward } from 'lucide-react';
 import Modal from '../components/Modal';
 import BookCover from '../components/BookCover';
+import OpinionReviewStep from './OpinionReviewStep';
 import { supabase } from '../lib/supabase';
 import {
   tierSeedElo,
@@ -10,13 +11,17 @@ import {
   selectMatchupCandidates,
   recalculateEloFromMatchups,
 } from '../lib/elo';
+import { fetchBookOpinions } from '../lib/claudeOpinions';
 import type { Book, MatchupResultType } from '../lib/database.types';
+import type { BookOpinions } from '../lib/claudeOpinions';
 
 type Tier = 'bad' | 'okay' | 'loved';
+type Phase = 'tier' | 'opinions' | 'matchup' | 'saving';
 
 interface EloMatchupModalProps {
   newBook: Book;
   library: Book[];
+  reviewId: string;
   onDone: () => void;
 }
 
@@ -26,75 +31,92 @@ function matchupCount(librarySize: number): number {
   return 8;
 }
 
-export default function EloMatchupModal({ newBook, library, onDone }: EloMatchupModalProps) {
-  const [phase, setPhase] = useState<'tier' | 'matchup' | 'saving'>('tier');
+export default function EloMatchupModal({ newBook, library, reviewId, onDone }: EloMatchupModalProps) {
+  const [phase, setPhase] = useState<Phase>('tier');
   const [currentIndex, setCurrentIndex] = useState(0);
   const [opponents, setOpponents] = useState<Book[]>([]);
-  const [saving, setSaving] = useState(false);
+  const [seededBook, setSeededBook] = useState<Book>(newBook);
   const [error, setError] = useState('');
+
+  // Opinion fetching — starts immediately on mount
+  const [opinions, setOpinions] = useState<BookOpinions | null>(null);
+  const [opinionsFetching, setOpinionsFetching] = useState(true);
+  const [opinionsError, setOpinionsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setOpinionsFetching(true);
+    fetchBookOpinions(newBook.title, newBook.author)
+      .then(result => {
+        if (!cancelled) setOpinions(result);
+      })
+      .catch(err => {
+        if (!cancelled) setOpinionsError(err instanceof Error ? err.message : 'Failed');
+      })
+      .finally(() => {
+        if (!cancelled) setOpinionsFetching(false);
+      });
+    return () => { cancelled = true; };
+  }, [newBook.title, newBook.author]);
 
   async function handleTierSelect(tier: Tier) {
     const seedElo = tierSeedElo(tier);
     const seedScore = eloToScore(seedElo);
-
-    // Persist initial ELO seed score
     await supabase.from('books').update({ elo_score: seedScore }).eq('id', newBook.id);
+    const seeded = { ...newBook, elo_score: seedScore };
+    setSeededBook(seeded);
 
-    const seededBook = { ...newBook, elo_score: seedScore };
     const count = matchupCount(library.length);
-    const candidates = selectMatchupCandidates(seededBook, library, count);
-
-    if (candidates.length === 0) {
-      onDone();
-      return;
-    }
-
+    const candidates = selectMatchupCandidates(seeded, library, count);
     setOpponents(candidates);
-    setPhase('matchup');
+    setPhase('opinions');
+  }
+
+  async function handleOpinionsDone(userAddedOpinion: string) {
+    if (userAddedOpinion.trim()) {
+      await supabase
+        .from('reviews')
+        .update({ user_added_opinion: userAddedOpinion.trim() })
+        .eq('id', reviewId);
+    }
+    if (opponents.length === 0) {
+      onDone();
+    } else {
+      setPhase('matchup');
+    }
   }
 
   async function handleMatchupResult(result: MatchupResultType, winnerIsLeft: boolean) {
     const opponent = opponents[currentIndex];
-    const isLastMatchup = currentIndex >= opponents.length - 1;
-
-    // Record matchup: for 'win', winner/loser are meaningful; for 'too_close'/'skip',
-    // we store newBook as winner_book_id and opponent as loser_book_id as a convention.
-    let winnerBookId: string;
-    let loserBookId: string;
-
-    if (result === 'win') {
-      winnerBookId = winnerIsLeft ? newBook.id : opponent.id;
-      loserBookId = winnerIsLeft ? opponent.id : newBook.id;
-    } else {
-      winnerBookId = newBook.id;
-      loserBookId = opponent.id;
-    }
+    const isLast = currentIndex >= opponents.length - 1;
 
     if (result !== 'skip') {
+      let winnerBookId: string;
+      let loserBookId: string;
+      if (result === 'win') {
+        winnerBookId = winnerIsLeft ? seededBook.id : opponent.id;
+        loserBookId = winnerIsLeft ? opponent.id : seededBook.id;
+      } else {
+        winnerBookId = seededBook.id;
+        loserBookId = opponent.id;
+      }
       const { error: insertErr } = await supabase.from('matchups').insert({
         winner_book_id: winnerBookId,
         loser_book_id: loserBookId,
         result_type: result,
       });
-      if (insertErr) {
-        setError(insertErr.message);
-        return;
-      }
+      if (insertErr) { setError(insertErr.message); return; }
     }
 
-    if (isLastMatchup) {
-      setSaving(true);
+    if (isLast) {
       setPhase('saving');
       try {
-        // Reload all books for full recalculation
         const { data: allBooks } = await supabase.from('books').select('*');
         if (allBooks) await recalculateEloFromMatchups(allBooks);
       } catch (e) {
         console.error('ELO recalc error:', e);
-      } finally {
-        setSaving(false);
-        onDone();
       }
+      onDone();
     } else {
       setCurrentIndex(i => i + 1);
     }
@@ -112,38 +134,42 @@ export default function EloMatchupModal({ newBook, library, onDone }: EloMatchup
             </div>
           </div>
           <p className="text-sm text-stone-600 pt-1">How did you feel about this book overall?</p>
-          <button
-            onClick={() => handleTierSelect('bad')}
-            className="w-full flex items-center gap-4 p-4 border-2 border-stone-200 rounded-xl hover:border-stone-400 hover:bg-stone-50 transition-all text-left"
-          >
-            <span className="text-2xl leading-none">😕</span>
-            <div>
-              <p className="font-medium text-stone-900 text-sm">Didn't enjoy it</p>
-              <p className="text-xs text-stone-400 mt-0.5">Seeds at 2 / 10</p>
-            </div>
-          </button>
-          <button
-            onClick={() => handleTierSelect('okay')}
-            className="w-full flex items-center gap-4 p-4 border-2 border-stone-200 rounded-xl hover:border-stone-400 hover:bg-stone-50 transition-all text-left"
-          >
-            <span className="text-2xl leading-none">😐</span>
-            <div>
-              <p className="font-medium text-stone-900 text-sm">It was okay</p>
-              <p className="text-xs text-stone-400 mt-0.5">Seeds at 5 / 10</p>
-            </div>
-          </button>
-          <button
-            onClick={() => handleTierSelect('loved')}
-            className="w-full flex items-center gap-4 p-4 border-2 border-stone-200 rounded-xl hover:border-stone-400 hover:bg-stone-50 transition-all text-left"
-          >
-            <span className="text-2xl leading-none">😍</span>
-            <div>
-              <p className="font-medium text-stone-900 text-sm">Loved it</p>
-              <p className="text-xs text-stone-400 mt-0.5">Seeds at 8 / 10</p>
-            </div>
-          </button>
+          {(['bad', 'okay', 'loved'] as Tier[]).map(tier => (
+            <button
+              key={tier}
+              onClick={() => handleTierSelect(tier)}
+              className="w-full flex items-center gap-4 p-4 border-2 border-stone-200 rounded-xl hover:border-stone-400 hover:bg-stone-50 transition-all text-left"
+            >
+              <span className="text-2xl leading-none">
+                {tier === 'bad' ? '😕' : tier === 'okay' ? '😐' : '😍'}
+              </span>
+              <div>
+                <p className="font-medium text-stone-900 text-sm">
+                  {tier === 'bad' ? "Didn't enjoy it" : tier === 'okay' ? 'It was okay' : 'Loved it'}
+                </p>
+                <p className="text-xs text-stone-400 mt-0.5">
+                  Seeds at {tier === 'bad' ? '2' : tier === 'okay' ? '5' : '8'} / 10
+                </p>
+              </div>
+            </button>
+          ))}
           {error && <p className="text-sm text-red-500">{error}</p>}
         </div>
+      </Modal>
+    );
+  }
+
+  if (phase === 'opinions') {
+    return (
+      <Modal title="What readers are saying" onClose={onDone} wide>
+        <OpinionReviewStep
+          reviewId={reviewId}
+          bookId={newBook.id}
+          opinions={opinions}
+          fetchError={opinionsError}
+          fetching={opinionsFetching}
+          onDone={handleOpinionsDone}
+        />
       </Modal>
     );
   }
@@ -180,21 +206,21 @@ export default function EloMatchupModal({ newBook, library, onDone }: EloMatchup
         <p className="text-sm text-stone-600 text-center">Which did you prefer?</p>
 
         <div className="grid grid-cols-2 gap-4">
-          {/* Left: new book */}
           <button
             onClick={() => handleMatchupResult('win', true)}
             className="group flex flex-col items-center gap-3 p-4 border-2 border-stone-200 rounded-2xl hover:border-stone-900 hover:bg-stone-50 transition-all"
           >
-            <BookCover url={newBook.cover_image_url} title={newBook.title} size="lg" />
+            <BookCover url={seededBook.cover_image_url} title={seededBook.title} size="lg" />
             <div className="text-center">
-              <p className="text-xs font-semibold text-stone-900 line-clamp-2 leading-snug">{newBook.title}</p>
-              <p className="text-xs text-stone-400 mt-0.5 truncate">{newBook.author}</p>
-              <p className="text-xs text-stone-500 mt-0.5">{eloToScore(scoreToElo(newBook.elo_score)).toFixed(1)} / 10</p>
+              <p className="text-xs font-semibold text-stone-900 line-clamp-2 leading-snug">{seededBook.title}</p>
+              <p className="text-xs text-stone-400 mt-0.5 truncate">{seededBook.author}</p>
+              <p className="text-xs text-stone-500 mt-0.5">{seededBook.elo_score.toFixed(1)} / 10</p>
             </div>
-            <span className="text-xs text-stone-500 group-hover:text-stone-900 font-medium transition-colors">I preferred this</span>
+            <span className="text-xs text-stone-500 group-hover:text-stone-900 font-medium transition-colors">
+              I preferred this
+            </span>
           </button>
 
-          {/* Right: opponent */}
           <button
             onClick={() => handleMatchupResult('win', false)}
             className="group flex flex-col items-center gap-3 p-4 border-2 border-stone-200 rounded-2xl hover:border-stone-900 hover:bg-stone-50 transition-all"
@@ -205,7 +231,9 @@ export default function EloMatchupModal({ newBook, library, onDone }: EloMatchup
               <p className="text-xs text-stone-400 mt-0.5 truncate">{opponent.author}</p>
               <p className="text-xs text-stone-500 mt-0.5">{opponent.elo_score.toFixed(1)} / 10</p>
             </div>
-            <span className="text-xs text-stone-500 group-hover:text-stone-900 font-medium transition-colors">I preferred this</span>
+            <span className="text-xs text-stone-500 group-hover:text-stone-900 font-medium transition-colors">
+              I preferred this
+            </span>
           </button>
         </div>
 

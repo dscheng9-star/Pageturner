@@ -25,6 +25,7 @@ export interface Review {
   entry_type: ReviewEntryType;
   star_rating: number | null;
   review_text: string | null;
+  user_added_opinion: string | null;
   read_count: number;
   date_finished: string | null;
   is_reread: boolean;
@@ -42,6 +43,7 @@ export interface Matchup {
 export interface OpinionSignal {
   id: string;
   review_id: string;
+  book_id: string | null;
   statement_text: string;
   opinion_type: OpinionType;
   response: OpinionResponse;

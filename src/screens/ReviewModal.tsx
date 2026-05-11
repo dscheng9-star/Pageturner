@@ -4,36 +4,44 @@ import Modal from '../components/Modal';
 import BookCover from '../components/BookCover';
 import EloMatchupModal from './EloMatchupModal';
 import { supabase } from '../lib/supabase';
-import type { Book, ReviewStatus, ReviewEntryType } from '../lib/database.types';
+import type { Book, Review, ReviewStatus, ReviewEntryType } from '../lib/database.types';
 import type { GoogleBook } from '../lib/googleBooks';
 import { extractCoverUrl, extractIsbn, extractGenre } from '../lib/googleBooks';
 
-type Mode = 'choose' | 'just_finished' | 'already_read' | 'quick' | 'deep';
+// Mode 'complete_review' handles backlog/want_to_read → full review upgrade
+type Mode = 'choose' | 'just_finished' | 'already_read' | 'quick' | 'deep' | 'complete_review';
 
 interface ReviewModalProps {
   googleBook?: GoogleBook;
   existingBook?: Book;
+  /** Force directly into the "complete review" flow for backlog/want_to_read books */
+  completeReview?: boolean;
   isReread?: boolean;
   onClose: () => void;
   onSaved: () => void;
-  /** Library of rated books, used for ELO matchup selection */
   library?: Book[];
+}
+
+interface SavedState {
+  book: Book;
+  reviewId: string;
 }
 
 export default function ReviewModal({
   googleBook,
   existingBook,
+  completeReview = false,
   isReread = false,
   onClose,
   onSaved,
   library = [],
 }: ReviewModalProps) {
-  const [mode, setMode] = useState<Mode>('choose');
+  const initialMode: Mode = completeReview ? 'complete_review' : 'choose';
+  const [mode, setMode] = useState<Mode>(initialMode);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [savedBook, setSavedBook] = useState<Book | null>(null);
+  const [savedState, setSavedState] = useState<SavedState | null>(null);
 
-  // Form state
   const [reviewText, setReviewText] = useState('');
   const [dateFinished, setDateFinished] = useState('');
   const [genre, setGenre] = useState(
@@ -69,29 +77,30 @@ export default function ReviewModal({
     return data as Book;
   }
 
-  async function handleSave(
-    status: ReviewStatus,
-    entryType: ReviewEntryType,
-    triggerElo: boolean
-  ) {
+  async function handleSave(status: ReviewStatus, entryType: ReviewEntryType, triggerElo: boolean) {
     setSaving(true);
     setError('');
     try {
       const book = await getOrCreateBook();
-      const { error: revErr } = await supabase.from('reviews').insert({
-        book_id: book.id,
-        status,
-        entry_type: entryType,
-        star_rating: null,
-        review_text: reviewText || null,
-        read_count: 1,
-        date_finished: dateFinished || null,
-        is_reread: isReread,
-      });
+      const { data: rev, error: revErr } = await supabase
+        .from('reviews')
+        .insert({
+          book_id: book.id,
+          status,
+          entry_type: entryType,
+          star_rating: null,
+          review_text: reviewText || null,
+          user_added_opinion: null,
+          read_count: 1,
+          date_finished: dateFinished || null,
+          is_reread: isReread,
+        })
+        .select('id')
+        .single();
       if (revErr) throw revErr;
 
       if (triggerElo) {
-        setSavedBook(book);
+        setSavedState({ book, reviewId: rev.id });
       } else {
         onSaved();
       }
@@ -102,12 +111,12 @@ export default function ReviewModal({
     }
   }
 
-  // After save, show ELO matchup flow for read books
-  if (savedBook) {
+  if (savedState) {
     return (
       <EloMatchupModal
-        newBook={savedBook}
+        newBook={savedState.book}
         library={library}
+        reviewId={savedState.reviewId}
         onDone={onSaved}
       />
     );
@@ -124,81 +133,20 @@ export default function ReviewModal({
             Re-read
           </span>
         )}
+        {completeReview && !isReread && (
+          <span className="inline-block mt-2 text-xs bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full">
+            Completing review
+          </span>
+        )}
       </div>
     </div>
   );
 
-  if (mode === 'choose') {
+  // Quick / Deep review panels (shared by just_finished and complete_review)
+  if (mode === 'quick' || mode === 'complete_review') {
+    const isComplete = mode === 'complete_review';
     return (
-      <Modal title="Log this book" onClose={onClose}>
-        {bookHeader}
-        <div className="p-6 space-y-3">
-          <p className="text-sm text-stone-500 mb-4">How would you like to add this book?</p>
-          <button
-            onClick={() => setMode('just_finished')}
-            className="w-full flex items-start gap-3 p-4 border border-stone-200 rounded-xl hover:border-stone-400 hover:bg-stone-50 transition-all text-left"
-          >
-            <span className="text-2xl">📖</span>
-            <div>
-              <p className="font-medium text-stone-900 text-sm">I just finished this</p>
-              <p className="text-xs text-stone-400 mt-0.5">Write a quick or deep review</p>
-            </div>
-          </button>
-          <button
-            onClick={() => setMode('already_read')}
-            className="w-full flex items-start gap-3 p-4 border border-stone-200 rounded-xl hover:border-stone-400 hover:bg-stone-50 transition-all text-left"
-          >
-            <span className="text-2xl">📚</span>
-            <div>
-              <p className="font-medium text-stone-900 text-sm">I've already read this</p>
-              <p className="text-xs text-stone-400 mt-0.5">Add to backlog with a quick note</p>
-            </div>
-          </button>
-          <button
-            onClick={() => handleSave('want_to_read', 'quick', false)}
-            disabled={saving}
-            className="w-full flex items-start gap-3 p-4 border border-stone-200 rounded-xl hover:border-stone-400 hover:bg-stone-50 transition-all text-left disabled:opacity-50"
-          >
-            <span className="text-2xl">🔖</span>
-            <div>
-              <p className="font-medium text-stone-900 text-sm">I want to read this</p>
-              <p className="text-xs text-stone-400 mt-0.5">Save to your reading list</p>
-            </div>
-          </button>
-        </div>
-      </Modal>
-    );
-  }
-
-  if (mode === 'just_finished') {
-    return (
-      <Modal title="I just finished this" onClose={onClose}>
-        {bookHeader}
-        <div className="p-6 space-y-4">
-          <div className="flex gap-3">
-            <button
-              onClick={() => setMode('quick')}
-              className="flex-1 p-3 border-2 border-stone-200 rounded-xl hover:border-stone-900 transition-colors text-left"
-            >
-              <p className="font-medium text-sm text-stone-900">Quick review</p>
-              <p className="text-xs text-stone-400 mt-0.5">Short thoughts + ELO ranking</p>
-            </button>
-            <button
-              onClick={() => setMode('deep')}
-              className="flex-1 p-3 border-2 border-stone-200 rounded-xl hover:border-stone-900 transition-colors text-left"
-            >
-              <p className="font-medium text-sm text-stone-900">Deep review</p>
-              <p className="text-xs text-stone-400 mt-0.5">Full breakdown + ELO ranking</p>
-            </button>
-          </div>
-        </div>
-      </Modal>
-    );
-  }
-
-  if (mode === 'quick') {
-    return (
-      <Modal title="Quick Review" onClose={onClose}>
+      <Modal title={isComplete ? 'Complete Review' : 'Quick Review'} onClose={onClose}>
         {bookHeader}
         <div className="p-6 space-y-5">
           <div>
@@ -230,11 +178,7 @@ export default function ReviewModal({
             disabled={saving}
             className="w-full py-3 bg-stone-900 text-white rounded-xl font-medium hover:bg-stone-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
           >
-            {saving ? (
-              <><span className="animate-spin">⟳</span> Saving…</>
-            ) : (
-              <><Check size={16} /> Save &amp; Rank</>
-            )}
+            {saving ? <><span className="animate-spin">⟳</span> Saving…</> : <><Check size={16} /> Save &amp; Rank</>}
           </button>
         </div>
       </Modal>
@@ -273,12 +217,34 @@ export default function ReviewModal({
             disabled={saving}
             className="w-full py-3 bg-stone-900 text-white rounded-xl font-medium hover:bg-stone-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
           >
-            {saving ? (
-              <><span className="animate-spin">⟳</span> Saving…</>
-            ) : (
-              <><Check size={16} /> Save &amp; Rank</>
-            )}
+            {saving ? <><span className="animate-spin">⟳</span> Saving…</> : <><Check size={16} /> Save &amp; Rank</>}
           </button>
+        </div>
+      </Modal>
+    );
+  }
+
+  if (mode === 'just_finished') {
+    return (
+      <Modal title="I just finished this" onClose={onClose}>
+        {bookHeader}
+        <div className="p-6 space-y-4">
+          <div className="flex gap-3">
+            <button
+              onClick={() => setMode('quick')}
+              className="flex-1 p-3 border-2 border-stone-200 rounded-xl hover:border-stone-900 transition-colors text-left"
+            >
+              <p className="font-medium text-sm text-stone-900">Quick review</p>
+              <p className="text-xs text-stone-400 mt-0.5">Short thoughts + ELO ranking</p>
+            </button>
+            <button
+              onClick={() => setMode('deep')}
+              className="flex-1 p-3 border-2 border-stone-200 rounded-xl hover:border-stone-900 transition-colors text-left"
+            >
+              <p className="font-medium text-sm text-stone-900">Deep review</p>
+              <p className="text-xs text-stone-400 mt-0.5">Full breakdown + ELO ranking</p>
+            </button>
+          </div>
         </div>
       </Modal>
     );
@@ -319,16 +285,51 @@ export default function ReviewModal({
             disabled={saving}
             className="w-full py-3 bg-stone-900 text-white rounded-xl font-medium hover:bg-stone-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
           >
-            {saving ? (
-              <><span className="animate-spin">⟳</span> Saving…</>
-            ) : (
-              <><Check size={16} /> Add &amp; Rank</>
-            )}
+            {saving ? <><span className="animate-spin">⟳</span> Saving…</> : <><Check size={16} /> Add &amp; Rank</>}
           </button>
         </div>
       </Modal>
     );
   }
 
-  return null;
+  // choose (default)
+  return (
+    <Modal title="Log this book" onClose={onClose}>
+      {bookHeader}
+      <div className="p-6 space-y-3">
+        <p className="text-sm text-stone-500 mb-4">How would you like to add this book?</p>
+        <button
+          onClick={() => setMode('just_finished')}
+          className="w-full flex items-start gap-3 p-4 border border-stone-200 rounded-xl hover:border-stone-400 hover:bg-stone-50 transition-all text-left"
+        >
+          <span className="text-2xl">📖</span>
+          <div>
+            <p className="font-medium text-stone-900 text-sm">I just finished this</p>
+            <p className="text-xs text-stone-400 mt-0.5">Write a quick or deep review</p>
+          </div>
+        </button>
+        <button
+          onClick={() => setMode('already_read')}
+          className="w-full flex items-start gap-3 p-4 border border-stone-200 rounded-xl hover:border-stone-400 hover:bg-stone-50 transition-all text-left"
+        >
+          <span className="text-2xl">📚</span>
+          <div>
+            <p className="font-medium text-stone-900 text-sm">I've already read this</p>
+            <p className="text-xs text-stone-400 mt-0.5">Add to backlog with a quick note</p>
+          </div>
+        </button>
+        <button
+          onClick={() => handleSave('want_to_read', 'quick', false)}
+          disabled={saving}
+          className="w-full flex items-start gap-3 p-4 border border-stone-200 rounded-xl hover:border-stone-400 hover:bg-stone-50 transition-all text-left disabled:opacity-50"
+        >
+          <span className="text-2xl">🔖</span>
+          <div>
+            <p className="font-medium text-stone-900 text-sm">I want to read this</p>
+            <p className="text-xs text-stone-400 mt-0.5">Save to your reading list</p>
+          </div>
+        </button>
+      </div>
+    </Modal>
+  );
 }

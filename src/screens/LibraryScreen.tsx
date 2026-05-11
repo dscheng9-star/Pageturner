@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Search, Filter } from 'lucide-react';
+import { Plus, Search, Filter, BookCheck } from 'lucide-react';
 import BookCover from '../components/BookCover';
 import AddBookModal from './AddBookModal';
 import ReviewModal from './ReviewModal';
@@ -30,7 +30,7 @@ export default function LibraryScreen() {
   const [showAddBook, setShowAddBook] = useState(false);
   const [pendingGoogleBook, setPendingGoogleBook] = useState<GoogleBook | null>(null);
   const [selectedBook, setSelectedBook] = useState<BookWithReviews | null>(null);
-  // Duplicate detection state
+  const [completeReviewBook, setCompleteReviewBook] = useState<BookWithReviews | null>(null);
   const [duplicateCandidate, setDuplicateCandidate] = useState<{
     existing: BookWithReviews;
     googleBook: GoogleBook;
@@ -53,11 +53,9 @@ export default function LibraryScreen() {
         if (!reviewsMap[r.book_id]) reviewsMap[r.book_id] = [];
         reviewsMap[r.book_id].push(r);
       });
-      const merged: BookWithReviews[] = booksData.map(b => ({
-        ...b,
-        reviews: reviewsMap[b.id] ?? [],
-      }));
-      setBooks(merged);
+      setBooks(
+        booksData.map(b => ({ ...b, reviews: reviewsMap[b.id] ?? [] }))
+      );
     }
     setLoading(false);
   }
@@ -72,11 +70,16 @@ export default function LibraryScreen() {
   function findDuplicate(gBook: GoogleBook): BookWithReviews | null {
     const inTitle = gBook.volumeInfo.title.toLowerCase().trim();
     const inAuthor = (gBook.volumeInfo.authors?.[0] ?? '').toLowerCase().trim();
-    return books.find(b => {
-      const bTitle = b.title.toLowerCase().trim();
-      const bAuthor = b.author.toLowerCase().trim();
-      return bTitle === inTitle && (inAuthor === '' || bAuthor.includes(inAuthor) || inAuthor.includes(bAuthor));
-    }) ?? null;
+    return (
+      books.find(b => {
+        const bTitle = b.title.toLowerCase().trim();
+        const bAuthor = b.author.toLowerCase().trim();
+        return (
+          bTitle === inTitle &&
+          (inAuthor === '' || bAuthor.includes(inAuthor) || inAuthor.includes(bAuthor))
+        );
+      }) ?? null
+    );
   }
 
   function handleGoogleBookSelect(gBook: GoogleBook) {
@@ -103,10 +106,10 @@ export default function LibraryScreen() {
     return true;
   });
 
-  // Already sorted by ELO from the DB query; apply stable secondary sort for same-score items
   const sortedBooks = [...filteredBooks].sort((a, b) => b.elo_score - a.elo_score);
-
-  const ratedLibrary = books.filter(b => b.reviews.some(r => r.status === 'read' || r.status === 'backlog'));
+  const ratedLibrary = books.filter(b =>
+    b.reviews.some(r => r.status === 'read' || r.status === 'backlog')
+  );
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -124,7 +127,6 @@ export default function LibraryScreen() {
             </button>
           </div>
 
-          {/* Search */}
           <div className="relative mb-3">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
             <input
@@ -135,7 +137,6 @@ export default function LibraryScreen() {
             />
           </div>
 
-          {/* Filter tabs */}
           <div className="flex gap-1 overflow-x-auto no-scrollbar">
             {(Object.keys(filterLabel) as FilterTab[]).map(tab => (
               <button
@@ -191,45 +192,66 @@ export default function LibraryScreen() {
           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-x-4 gap-y-6">
             {sortedBooks.map(book => {
               const status = getBookStatus(book);
-              const hasScore = book.reviews.some(r => r.status === 'read' || r.status === 'backlog');
+              const hasScore = book.reviews.some(
+                r => r.status === 'read' || r.status === 'backlog'
+              );
+              const needsReview = status === 'backlog' || status === 'want_to_read';
               return (
-                <button
-                  key={book.id}
-                  onClick={() => setSelectedBook(book)}
-                  className="text-left group"
-                >
-                  <div className="relative">
-                    <BookCover
-                      url={book.cover_image_url}
-                      title={book.title}
-                      size="md"
-                      className="w-full group-hover:shadow-md transition-shadow"
-                    />
-                    {status === 'want_to_read' && (
-                      <div className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-white shadow flex items-center justify-center text-xs">
-                        🔖
-                      </div>
-                    )}
-                  </div>
-                  <div className="mt-2">
-                    <p className="text-xs font-medium text-stone-800 line-clamp-2 leading-snug">{book.title}</p>
-                    <p className="text-xs text-stone-400 mt-0.5 truncate">{book.author}</p>
-                    {hasScore ? (
-                      <p className="text-xs font-semibold text-stone-700 mt-1 tabular-nums">
-                        {book.elo_score.toFixed(1)}<span className="font-normal text-stone-400"> / 10</span>
+                <div key={book.id} className="flex flex-col">
+                  <button
+                    onClick={() => setSelectedBook(book)}
+                    className="text-left group flex-1"
+                  >
+                    <div className="relative">
+                      <BookCover
+                        url={book.cover_image_url}
+                        title={book.title}
+                        size="md"
+                        className="w-full group-hover:shadow-md transition-shadow"
+                      />
+                      {status === 'want_to_read' && (
+                        <div className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-white shadow flex items-center justify-center text-xs">
+                          🔖
+                        </div>
+                      )}
+                    </div>
+                    <div className="mt-2">
+                      <p className="text-xs font-medium text-stone-800 line-clamp-2 leading-snug">
+                        {book.title}
                       </p>
-                    ) : status === 'want_to_read' ? (
-                      <p className="text-xs text-stone-400 mt-1">Want to read</p>
-                    ) : null}
-                  </div>
-                </button>
+                      <p className="text-xs text-stone-400 mt-0.5 truncate">{book.author}</p>
+                      {hasScore ? (
+                        <p className="text-xs font-semibold text-stone-700 mt-1 tabular-nums">
+                          {book.elo_score.toFixed(1)}
+                          <span className="font-normal text-stone-400"> / 10</span>
+                        </p>
+                      ) : status === 'want_to_read' ? (
+                        <p className="text-xs text-stone-400 mt-1">Want to read</p>
+                      ) : status === 'backlog' ? (
+                        <p className="text-xs text-stone-400 mt-1">Backlog</p>
+                      ) : null}
+                    </div>
+                  </button>
+
+                  {needsReview && (
+                    <button
+                      onClick={e => {
+                        e.stopPropagation();
+                        setCompleteReviewBook(book);
+                      }}
+                      className="mt-2 flex items-center justify-center gap-1 py-1.5 border border-stone-200 rounded-lg text-xs font-medium text-stone-600 hover:bg-stone-900 hover:text-white hover:border-stone-900 transition-all"
+                    >
+                      <BookCheck size={12} />
+                      Complete Review
+                    </button>
+                  )}
+                </div>
               );
             })}
           </div>
         )}
       </div>
 
-      {/* Count */}
       {!loading && sortedBooks.length > 0 && (
         <p className="px-6 pb-6 text-xs text-stone-400">
           {sortedBooks.length} {sortedBooks.length === 1 ? 'book' : 'books'}
@@ -246,9 +268,9 @@ export default function LibraryScreen() {
       {duplicateCandidate && (
         <DuplicateBookDialog
           existingBook={duplicateCandidate.existing}
-          onUpdateReview={existing => {
-            setDuplicateCandidate(null);
+          onUpdateReview={() => {
             setSelectedBook(duplicateCandidate.existing);
+            setDuplicateCandidate(null);
           }}
           onAddAsNew={() => {
             const gBook = duplicateCandidate.googleBook;
@@ -266,6 +288,15 @@ export default function LibraryScreen() {
           onSaved={() => { setPendingGoogleBook(null); fetchBooks(); }}
         />
       )}
+      {completeReviewBook && (
+        <ReviewModal
+          existingBook={completeReviewBook}
+          completeReview
+          library={ratedLibrary}
+          onClose={() => setCompleteReviewBook(null)}
+          onSaved={() => { setCompleteReviewBook(null); fetchBooks(); }}
+        />
+      )}
       {selectedBook && (
         <BookDetailModal
           book={selectedBook}
@@ -273,6 +304,10 @@ export default function LibraryScreen() {
           onClose={() => setSelectedBook(null)}
           onRefresh={() => { setSelectedBook(null); fetchBooks(); }}
           library={ratedLibrary}
+          onCompleteReview={book => {
+            setSelectedBook(null);
+            setCompleteReviewBook(book as BookWithReviews);
+          }}
         />
       )}
     </div>
