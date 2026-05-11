@@ -2,6 +2,7 @@ export type ReviewStatus = 'read' | 'backlog' | 'want_to_read';
 export type ReviewEntryType = 'quick' | 'deep' | 'backlog_lite';
 export type OpinionType = 'popular' | 'unpopular';
 export type OpinionResponse = 'agree' | 'disagree' | 'neutral';
+export type MatchupResultType = 'win' | 'too_close' | 'skip';
 
 export interface Book {
   id: string;
@@ -13,6 +14,7 @@ export interface Book {
   series_name: string | null;
   series_number: number | null;
   isbn: string | null;
+  elo_score: number;
   created_at: string;
 }
 
@@ -26,6 +28,14 @@ export interface Review {
   read_count: number;
   date_finished: string | null;
   is_reread: boolean;
+  created_at: string;
+}
+
+export interface Matchup {
+  id: string;
+  winner_book_id: string;
+  loser_book_id: string;
+  result_type: MatchupResultType;
   created_at: string;
 }
 
@@ -57,6 +67,7 @@ export interface Database {
     Tables: {
       books: { Row: Book; Insert: Omit<Book, 'id' | 'created_at'>; Update: Partial<Omit<Book, 'id' | 'created_at'>> };
       reviews: { Row: Review; Insert: Omit<Review, 'id' | 'created_at'>; Update: Partial<Omit<Review, 'id' | 'created_at'>> };
+      matchups: { Row: Matchup; Insert: Omit<Matchup, 'id' | 'created_at'>; Update: Partial<Omit<Matchup, 'id' | 'created_at'>> };
       opinion_signals: { Row: OpinionSignal; Insert: Omit<OpinionSignal, 'id' | 'created_at'>; Update: Partial<Omit<OpinionSignal, 'id' | 'created_at'>> };
       recommendations: { Row: Recommendation; Insert: Omit<Recommendation, 'id' | 'created_at'>; Update: Partial<Omit<Recommendation, 'id' | 'created_at'>> };
     };

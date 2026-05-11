@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Plus, Search, Filter } from 'lucide-react';
 import BookCover from '../components/BookCover';
-import StarRating from '../components/StarRating';
 import AddBookModal from './AddBookModal';
 import ReviewModal from './ReviewModal';
 import BookDetailModal from './BookDetailModal';
+import DuplicateBookDialog from './DuplicateBookDialog';
 import { supabase } from '../lib/supabase';
 import type { Book, Review, ReviewStatus } from '../lib/database.types';
 import type { GoogleBook } from '../lib/googleBooks';
@@ -30,11 +30,22 @@ export default function LibraryScreen() {
   const [showAddBook, setShowAddBook] = useState(false);
   const [pendingGoogleBook, setPendingGoogleBook] = useState<GoogleBook | null>(null);
   const [selectedBook, setSelectedBook] = useState<BookWithReviews | null>(null);
+  // Duplicate detection state
+  const [duplicateCandidate, setDuplicateCandidate] = useState<{
+    existing: BookWithReviews;
+    googleBook: GoogleBook;
+  } | null>(null);
 
   async function fetchBooks() {
     setLoading(true);
-    const { data: reviewsData } = await supabase.from('reviews').select('*').order('created_at', { ascending: true });
-    const { data: booksData } = await supabase.from('books').select('*').order('created_at', { ascending: false });
+    const { data: reviewsData } = await supabase
+      .from('reviews')
+      .select('*')
+      .order('created_at', { ascending: true });
+    const { data: booksData } = await supabase
+      .from('books')
+      .select('*')
+      .order('elo_score', { ascending: false });
 
     if (booksData) {
       const reviewsMap: Record<string, Review[]> = {};
@@ -55,14 +66,27 @@ export default function LibraryScreen() {
 
   function getBookStatus(book: BookWithReviews): ReviewStatus | null {
     if (book.reviews.length === 0) return null;
-    const latest = book.reviews[book.reviews.length - 1];
-    return latest.status;
+    return book.reviews[book.reviews.length - 1].status;
   }
 
-  function getLatestRating(book: BookWithReviews): number | null {
-    const readReviews = book.reviews.filter(r => r.star_rating !== null);
-    if (readReviews.length === 0) return null;
-    return readReviews[readReviews.length - 1].star_rating;
+  function findDuplicate(gBook: GoogleBook): BookWithReviews | null {
+    const inTitle = gBook.volumeInfo.title.toLowerCase().trim();
+    const inAuthor = (gBook.volumeInfo.authors?.[0] ?? '').toLowerCase().trim();
+    return books.find(b => {
+      const bTitle = b.title.toLowerCase().trim();
+      const bAuthor = b.author.toLowerCase().trim();
+      return bTitle === inTitle && (inAuthor === '' || bAuthor.includes(inAuthor) || inAuthor.includes(bAuthor));
+    }) ?? null;
+  }
+
+  function handleGoogleBookSelect(gBook: GoogleBook) {
+    setShowAddBook(false);
+    const existing = findDuplicate(gBook);
+    if (existing) {
+      setDuplicateCandidate({ existing, googleBook: gBook });
+    } else {
+      setPendingGoogleBook(gBook);
+    }
   }
 
   const filteredBooks = books.filter(book => {
@@ -79,10 +103,10 @@ export default function LibraryScreen() {
     return true;
   });
 
-  function handleGoogleBookSelect(gBook: GoogleBook) {
-    setShowAddBook(false);
-    setPendingGoogleBook(gBook);
-  }
+  // Already sorted by ELO from the DB query; apply stable secondary sort for same-score items
+  const sortedBooks = [...filteredBooks].sort((a, b) => b.elo_score - a.elo_score);
+
+  const ratedLibrary = books.filter(b => b.reviews.some(r => r.status === 'read' || r.status === 'backlog'));
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -142,13 +166,17 @@ export default function LibraryScreen() {
               </div>
             ))}
           </div>
-        ) : filteredBooks.length === 0 ? (
+        ) : sortedBooks.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-stone-400">
             <div className="w-16 h-16 rounded-full bg-stone-100 flex items-center justify-center mb-4">
               <Filter size={24} />
             </div>
             <p className="font-medium text-stone-600">
-              {search ? 'No books match your search' : filter === 'all' ? 'Your library is empty' : `No ${filterLabel[filter].toLowerCase()} books yet`}
+              {search
+                ? 'No books match your search'
+                : filter === 'all'
+                ? 'Your library is empty'
+                : `No ${filterLabel[filter].toLowerCase()} books yet`}
             </p>
             {filter === 'all' && !search && (
               <button
@@ -161,9 +189,9 @@ export default function LibraryScreen() {
           </div>
         ) : (
           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-x-4 gap-y-6">
-            {filteredBooks.map(book => {
-              const rating = getLatestRating(book);
+            {sortedBooks.map(book => {
               const status = getBookStatus(book);
+              const hasScore = book.reviews.some(r => r.status === 'read' || r.status === 'backlog');
               return (
                 <button
                   key={book.id}
@@ -186,10 +214,10 @@ export default function LibraryScreen() {
                   <div className="mt-2">
                     <p className="text-xs font-medium text-stone-800 line-clamp-2 leading-snug">{book.title}</p>
                     <p className="text-xs text-stone-400 mt-0.5 truncate">{book.author}</p>
-                    {rating !== null ? (
-                      <div className="mt-1">
-                        <StarRating value={rating} readonly size="sm" />
-                      </div>
+                    {hasScore ? (
+                      <p className="text-xs font-semibold text-stone-700 mt-1 tabular-nums">
+                        {book.elo_score.toFixed(1)}<span className="font-normal text-stone-400"> / 10</span>
+                      </p>
                     ) : status === 'want_to_read' ? (
                       <p className="text-xs text-stone-400 mt-1">Want to read</p>
                     ) : null}
@@ -202,8 +230,10 @@ export default function LibraryScreen() {
       </div>
 
       {/* Count */}
-      {!loading && filteredBooks.length > 0 && (
-        <p className="px-6 pb-6 text-xs text-stone-400">{filteredBooks.length} {filteredBooks.length === 1 ? 'book' : 'books'}</p>
+      {!loading && sortedBooks.length > 0 && (
+        <p className="px-6 pb-6 text-xs text-stone-400">
+          {sortedBooks.length} {sortedBooks.length === 1 ? 'book' : 'books'}
+        </p>
       )}
 
       {/* Modals */}
@@ -213,9 +243,25 @@ export default function LibraryScreen() {
           onSelect={handleGoogleBookSelect}
         />
       )}
+      {duplicateCandidate && (
+        <DuplicateBookDialog
+          existingBook={duplicateCandidate.existing}
+          onUpdateReview={existing => {
+            setDuplicateCandidate(null);
+            setSelectedBook(duplicateCandidate.existing);
+          }}
+          onAddAsNew={() => {
+            const gBook = duplicateCandidate.googleBook;
+            setDuplicateCandidate(null);
+            setPendingGoogleBook(gBook);
+          }}
+          onClose={() => setDuplicateCandidate(null)}
+        />
+      )}
       {pendingGoogleBook && (
         <ReviewModal
           googleBook={pendingGoogleBook}
+          library={ratedLibrary}
           onClose={() => setPendingGoogleBook(null)}
           onSaved={() => { setPendingGoogleBook(null); fetchBooks(); }}
         />
@@ -226,6 +272,7 @@ export default function LibraryScreen() {
           reviews={selectedBook.reviews}
           onClose={() => setSelectedBook(null)}
           onRefresh={() => { setSelectedBook(null); fetchBooks(); }}
+          library={ratedLibrary}
         />
       )}
     </div>

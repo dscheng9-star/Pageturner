@@ -1,14 +1,14 @@
 import { useState } from 'react';
-import { Check, ChevronDown } from 'lucide-react';
+import { Check } from 'lucide-react';
 import Modal from '../components/Modal';
 import BookCover from '../components/BookCover';
-import StarRating from '../components/StarRating';
+import EloMatchupModal from './EloMatchupModal';
 import { supabase } from '../lib/supabase';
 import type { Book, ReviewStatus, ReviewEntryType } from '../lib/database.types';
 import type { GoogleBook } from '../lib/googleBooks';
 import { extractCoverUrl, extractIsbn, extractGenre } from '../lib/googleBooks';
 
-type Mode = 'choose' | 'just_finished' | 'already_read' | 'want_to_read' | 'quick' | 'deep';
+type Mode = 'choose' | 'just_finished' | 'already_read' | 'quick' | 'deep';
 
 interface ReviewModalProps {
   googleBook?: GoogleBook;
@@ -16,26 +16,36 @@ interface ReviewModalProps {
   isReread?: boolean;
   onClose: () => void;
   onSaved: () => void;
+  /** Library of rated books, used for ELO matchup selection */
+  library?: Book[];
 }
 
-export default function ReviewModal({ googleBook, existingBook, isReread = false, onClose, onSaved }: ReviewModalProps) {
-  const [mode, setMode] = useState<Mode>(isReread ? 'choose' : 'choose');
+export default function ReviewModal({
+  googleBook,
+  existingBook,
+  isReread = false,
+  onClose,
+  onSaved,
+  library = [],
+}: ReviewModalProps) {
+  const [mode, setMode] = useState<Mode>('choose');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [savedBook, setSavedBook] = useState<Book | null>(null);
 
   // Form state
-  const [starRating, setStarRating] = useState<number | null>(null);
   const [reviewText, setReviewText] = useState('');
   const [dateFinished, setDateFinished] = useState('');
-  const [genre, setGenre] = useState(existingBook?.genre ?? (googleBook ? extractGenre(googleBook) : '') ?? '');
+  const [genre, setGenre] = useState(
+    existingBook?.genre ?? (googleBook ? extractGenre(googleBook) : '') ?? ''
+  );
 
   const title = existingBook?.title ?? googleBook?.volumeInfo.title ?? '';
   const author = existingBook?.author ?? googleBook?.volumeInfo.authors?.join(', ') ?? '';
   const coverUrl = existingBook?.cover_image_url ?? (googleBook ? extractCoverUrl(googleBook) : null);
 
-  async function getOrCreateBook(): Promise<string> {
-    if (existingBook) return existingBook.id;
-
+  async function getOrCreateBook(): Promise<Book> {
+    if (existingBook) return existingBook;
     if (!googleBook) throw new Error('No book data');
 
     const info = googleBook.volumeInfo;
@@ -50,36 +60,57 @@ export default function ReviewModal({ googleBook, existingBook, isReread = false
         isbn: extractIsbn(googleBook),
         series_name: null,
         series_number: null,
+        elo_score: 5.0,
       })
-      .select('id')
+      .select('*')
       .single();
 
     if (error) throw error;
-    return data.id;
+    return data as Book;
   }
 
-  async function handleSave(status: ReviewStatus, entryType: ReviewEntryType) {
+  async function handleSave(
+    status: ReviewStatus,
+    entryType: ReviewEntryType,
+    triggerElo: boolean
+  ) {
     setSaving(true);
     setError('');
     try {
-      const bookId = await getOrCreateBook();
+      const book = await getOrCreateBook();
       const { error: revErr } = await supabase.from('reviews').insert({
-        book_id: bookId,
+        book_id: book.id,
         status,
         entry_type: entryType,
-        star_rating: starRating,
+        star_rating: null,
         review_text: reviewText || null,
         read_count: 1,
         date_finished: dateFinished || null,
         is_reread: isReread,
       });
       if (revErr) throw revErr;
-      onSaved();
+
+      if (triggerElo) {
+        setSavedBook(book);
+      } else {
+        onSaved();
+      }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to save');
     } finally {
       setSaving(false);
     }
+  }
+
+  // After save, show ELO matchup flow for read books
+  if (savedBook) {
+    return (
+      <EloMatchupModal
+        newBook={savedBook}
+        library={library}
+        onDone={onSaved}
+      />
+    );
   }
 
   const bookHeader = (
@@ -89,7 +120,9 @@ export default function ReviewModal({ googleBook, existingBook, isReread = false
         <h3 className="font-semibold text-stone-900 leading-snug">{title}</h3>
         <p className="text-sm text-stone-500 mt-0.5">{author}</p>
         {isReread && (
-          <span className="inline-block mt-2 text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">Re-read</span>
+          <span className="inline-block mt-2 text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+            Re-read
+          </span>
         )}
       </div>
     </div>
@@ -118,11 +151,11 @@ export default function ReviewModal({ googleBook, existingBook, isReread = false
             <span className="text-2xl">📚</span>
             <div>
               <p className="font-medium text-stone-900 text-sm">I've already read this</p>
-              <p className="text-xs text-stone-400 mt-0.5">Add to backlog with a quick rating</p>
+              <p className="text-xs text-stone-400 mt-0.5">Add to backlog with a quick note</p>
             </div>
           </button>
           <button
-            onClick={() => handleSave('want_to_read', 'quick')}
+            onClick={() => handleSave('want_to_read', 'quick', false)}
             disabled={saving}
             className="w-full flex items-start gap-3 p-4 border border-stone-200 rounded-xl hover:border-stone-400 hover:bg-stone-50 transition-all text-left disabled:opacity-50"
           >
@@ -148,14 +181,14 @@ export default function ReviewModal({ googleBook, existingBook, isReread = false
               className="flex-1 p-3 border-2 border-stone-200 rounded-xl hover:border-stone-900 transition-colors text-left"
             >
               <p className="font-medium text-sm text-stone-900">Quick review</p>
-              <p className="text-xs text-stone-400 mt-0.5">Rating + short thoughts</p>
+              <p className="text-xs text-stone-400 mt-0.5">Short thoughts + ELO ranking</p>
             </button>
             <button
               onClick={() => setMode('deep')}
               className="flex-1 p-3 border-2 border-stone-200 rounded-xl hover:border-stone-900 transition-colors text-left"
             >
               <p className="font-medium text-sm text-stone-900">Deep review</p>
-              <p className="text-xs text-stone-400 mt-0.5">Full breakdown</p>
+              <p className="text-xs text-stone-400 mt-0.5">Full breakdown + ELO ranking</p>
             </button>
           </div>
         </div>
@@ -169,11 +202,9 @@ export default function ReviewModal({ googleBook, existingBook, isReread = false
         {bookHeader}
         <div className="p-6 space-y-5">
           <div>
-            <label className="block text-sm font-medium text-stone-700 mb-2">Your rating</label>
-            <StarRating value={starRating} onChange={setStarRating} size="lg" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-stone-700 mb-2">Quick thoughts <span className="text-stone-400 font-normal">(optional)</span></label>
+            <label className="block text-sm font-medium text-stone-700 mb-2">
+              Quick thoughts <span className="text-stone-400 font-normal">(optional)</span>
+            </label>
             <textarea
               value={reviewText}
               onChange={e => setReviewText(e.target.value)}
@@ -183,7 +214,9 @@ export default function ReviewModal({ googleBook, existingBook, isReread = false
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-stone-700 mb-2">Date finished <span className="text-stone-400 font-normal">(optional)</span></label>
+            <label className="block text-sm font-medium text-stone-700 mb-2">
+              Date finished <span className="text-stone-400 font-normal">(optional)</span>
+            </label>
             <input
               type="date"
               value={dateFinished}
@@ -193,11 +226,15 @@ export default function ReviewModal({ googleBook, existingBook, isReread = false
           </div>
           {error && <p className="text-sm text-red-500">{error}</p>}
           <button
-            onClick={() => handleSave('read', 'quick')}
-            disabled={saving || !starRating}
+            onClick={() => handleSave('read', 'quick', true)}
+            disabled={saving}
             className="w-full py-3 bg-stone-900 text-white rounded-xl font-medium hover:bg-stone-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
           >
-            {saving ? <><span className="animate-spin">⟳</span> Saving…</> : <><Check size={16} /> Save Review</>}
+            {saving ? (
+              <><span className="animate-spin">⟳</span> Saving…</>
+            ) : (
+              <><Check size={16} /> Save &amp; Rank</>
+            )}
           </button>
         </div>
       </Modal>
@@ -210,10 +247,6 @@ export default function ReviewModal({ googleBook, existingBook, isReread = false
         {bookHeader}
         <div className="p-6 space-y-5">
           <div>
-            <label className="block text-sm font-medium text-stone-700 mb-2">Your rating</label>
-            <StarRating value={starRating} onChange={setStarRating} size="lg" />
-          </div>
-          <div>
             <label className="block text-sm font-medium text-stone-700 mb-2">Your review</label>
             <textarea
               value={reviewText}
@@ -224,7 +257,9 @@ export default function ReviewModal({ googleBook, existingBook, isReread = false
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-stone-700 mb-2">Date finished <span className="text-stone-400 font-normal">(optional)</span></label>
+            <label className="block text-sm font-medium text-stone-700 mb-2">
+              Date finished <span className="text-stone-400 font-normal">(optional)</span>
+            </label>
             <input
               type="date"
               value={dateFinished}
@@ -234,11 +269,15 @@ export default function ReviewModal({ googleBook, existingBook, isReread = false
           </div>
           {error && <p className="text-sm text-red-500">{error}</p>}
           <button
-            onClick={() => handleSave('read', 'deep')}
-            disabled={saving || !starRating}
+            onClick={() => handleSave('read', 'deep', true)}
+            disabled={saving}
             className="w-full py-3 bg-stone-900 text-white rounded-xl font-medium hover:bg-stone-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
           >
-            {saving ? <><span className="animate-spin">⟳</span> Saving…</> : <><Check size={16} /> Save Review</>}
+            {saving ? (
+              <><span className="animate-spin">⟳</span> Saving…</>
+            ) : (
+              <><Check size={16} /> Save &amp; Rank</>
+            )}
           </button>
         </div>
       </Modal>
@@ -251,11 +290,9 @@ export default function ReviewModal({ googleBook, existingBook, isReread = false
         {bookHeader}
         <div className="p-6 space-y-5">
           <div>
-            <label className="block text-sm font-medium text-stone-700 mb-2">Your rating</label>
-            <StarRating value={starRating} onChange={setStarRating} size="lg" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-stone-700 mb-2">Genre <span className="text-stone-400 font-normal">(optional)</span></label>
+            <label className="block text-sm font-medium text-stone-700 mb-2">
+              Genre <span className="text-stone-400 font-normal">(optional)</span>
+            </label>
             <input
               type="text"
               value={genre}
@@ -265,7 +302,9 @@ export default function ReviewModal({ googleBook, existingBook, isReread = false
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-stone-700 mb-2">Notes <span className="text-stone-400 font-normal">(optional)</span></label>
+            <label className="block text-sm font-medium text-stone-700 mb-2">
+              Notes <span className="text-stone-400 font-normal">(optional)</span>
+            </label>
             <textarea
               value={reviewText}
               onChange={e => setReviewText(e.target.value)}
@@ -276,11 +315,15 @@ export default function ReviewModal({ googleBook, existingBook, isReread = false
           </div>
           {error && <p className="text-sm text-red-500">{error}</p>}
           <button
-            onClick={() => handleSave('backlog', 'backlog_lite')}
-            disabled={saving || !starRating}
+            onClick={() => handleSave('backlog', 'backlog_lite', true)}
+            disabled={saving}
             className="w-full py-3 bg-stone-900 text-white rounded-xl font-medium hover:bg-stone-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
           >
-            {saving ? <><span className="animate-spin">⟳</span> Saving…</> : <><Check size={16} /> Add to Backlog</>}
+            {saving ? (
+              <><span className="animate-spin">⟳</span> Saving…</>
+            ) : (
+              <><Check size={16} /> Add &amp; Rank</>
+            )}
           </button>
         </div>
       </Modal>
