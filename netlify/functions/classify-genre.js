@@ -9,78 +9,78 @@ const ALLOWED_GENRES = new Set([
   'Bible','Biblical Commentary','Christian Living','Christian Theology','Devotional','Church History',
   'Apologetics','Spiritual Memoir','Religious History',
   'Graphic Novel','Young Adult','Middle Grade',"Children's",
+  'Media Tie-In Fiction','Star Wars Expanded Universe',
 ]);
 
 const GENRE_LIST = [...ALLOWED_GENRES].join(', ');
 
-exports.handler = async function (event) {
+exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: 'Method Not Allowed' };
   }
 
-  let bookTitle, bookAuthor, bookDescription;
   try {
-    const body = JSON.parse(event.body ?? '{}');
-    bookTitle       = body.bookTitle       ?? '';
-    bookAuthor      = body.bookAuthor      ?? '';
-    bookDescription = body.bookDescription ?? '';
-  } catch {
-    return { statusCode: 400, body: 'Invalid JSON body' };
-  }
+    const { bookTitle, bookAuthor, bookDescription } = JSON.parse(event.body ?? '{}');
 
-  if (!bookTitle || !bookAuthor) {
-    return { statusCode: 400, body: 'bookTitle and bookAuthor are required' };
-  }
-
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return {
-      statusCode: 200,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(['Fiction']),
-    };
-  }
-
-  const prompt = `Given the book "${bookTitle}" by ${bookAuthor} with this description: "${bookDescription}", assign between 1 and 3 genres from this exact list only. Return only a JSON array of genre strings with no other text, no markdown, no backticks. Only use genres from the provided list exactly as written. Example response: ["High Fantasy", "Romantasy"]\n\nGenre list: ${GENRE_LIST}`;
-
-  try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
-      }
-    );
-
-    if (!response.ok) {
+    if (!process.env.GEMINI_API_KEY) {
       return {
-        statusCode: 200,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(['Fiction']),
+        statusCode: 500,
+        body: JSON.stringify({ error: 'GEMINI_API_KEY is not configured' }),
       };
     }
 
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: `Given the book "${bookTitle}" by ${bookAuthor} with this description: "${bookDescription}", assign between 1 and 3 genres from this exact list only. Return only a JSON array of genre strings with no other text, no markdown, no backticks. Only use genres from the provided list exactly as written. Example response: ["High Fantasy", "Romantasy"]\n\nGenre list: ${GENRE_LIST}`,
+            }],
+          }],
+        }),
+      }
+    );
+
     const data = await response.json();
-    const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-    const cleaned = raw.replace(/```json/g, '').replace(/```/g, '').trim();
+
+    if (!response.ok) {
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ error: `Gemini API error: ${JSON.stringify(data)}` }),
+      };
+    }
+
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    if (!text) {
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ error: 'No text in Gemini response', data }),
+      };
+    }
+
+    const cleaned = text.replace(/```json/g, '').replace(/```/g, '').trim();
 
     let genres;
     try {
       genres = JSON.parse(cleaned);
-    } catch {
-      genres = null;
+    } catch (parseErr) {
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ error: `JSON parse failed: ${parseErr.message}`, raw: cleaned }),
+      };
     }
 
     if (!Array.isArray(genres)) {
       return {
-        statusCode: 200,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(['Fiction']),
+        statusCode: 500,
+        body: JSON.stringify({ error: 'Gemini response was not a JSON array', raw: cleaned }),
       };
     }
 
-    // Filter to only allowed genres, cap at 3
     const valid = genres.filter(g => typeof g === 'string' && ALLOWED_GENRES.has(g)).slice(0, 3);
 
     return {
@@ -88,11 +88,10 @@ exports.handler = async function (event) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(valid.length > 0 ? valid : ['Fiction']),
     };
-  } catch {
+  } catch (error) {
     return {
-      statusCode: 200,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(['Fiction']),
+      statusCode: 500,
+      body: JSON.stringify({ error: error.message, stack: error.stack }),
     };
   }
 };

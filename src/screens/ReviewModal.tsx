@@ -30,17 +30,15 @@ async function classifyGenre(
   bookAuthor: string,
   bookDescription: string
 ): Promise<string[]> {
-  try {
-    const res = await fetch('/.netlify/functions/classify-genre', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bookTitle, bookAuthor, bookDescription }),
-    });
-    if (!res.ok) return ['Fiction'];
-    return await res.json();
-  } catch {
-    return ['Fiction'];
-  }
+  const res = await fetch('/.netlify/functions/classify-genre', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ bookTitle, bookAuthor, bookDescription }),
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body?.error ?? `classify-genre failed (${res.status})`);
+  if (!Array.isArray(body)) throw new Error(`Unexpected response: ${JSON.stringify(body)}`);
+  return body;
 }
 
 export default function ReviewModal({
@@ -95,9 +93,9 @@ export default function ReviewModal({
     if (error) throw error;
 
     // Fire-and-forget genre classification; update book in background
-    classifyGenre(info.title, info.authors?.join(', ') ?? '', info.description ?? '').then(genres => {
-      supabase.from('books').update({ genres }).eq('id', (data as Book).id);
-    });
+    classifyGenre(info.title, info.authors?.join(', ') ?? '', info.description ?? '')
+      .then(genres => supabase.from('books').update({ genres }).eq('id', (data as Book).id))
+      .catch(err => console.error('[classify-genre]', err));
 
     return data as Book;
   }
