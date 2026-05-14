@@ -35,7 +35,7 @@ exports.handler = async function (event) {
       messages: [
         {
           role: 'user',
-          content: `Search Reddit, Goodreads, and book review sites for opinions on "${bookTitle}" by ${bookAuthor}. Then synthesize what you find into exactly this JSON format and nothing else, no markdown backticks:\n{\n  "popular_opinions": [\n    "Statement one as a declarative first-person opinion",\n    "Statement two",\n    "Statement three",\n    "Statement four"\n  ],\n  "unpopular_opinions": [\n    "Contrarian statement one",\n    "Contrarian statement two"\n  ]\n}`,
+          content: `Search Reddit, Goodreads, and book review sites for opinions on "${bookTitle}" by ${bookAuthor}. Then synthesize what you find into exactly this JSON format and nothing else, no markdown backticks:\n{\n  "popular_opinions": [\n    "Statement one as a declarative first-person opinion",\n    "Statement two",\n    "Statement three",\n    "Statement four"\n  ],\n  "unpopular_opinions": [\n    "Contrarian statement one",\n    "Contrarian statement two"\n  ]\n}\nYour entire response must be only the JSON object with no text before or after it, no markdown formatting, and no backticks.`,
         },
       ],
     }),
@@ -50,22 +50,37 @@ exports.handler = async function (event) {
   }
 
   const data = await response.json();
-  const content = data.content ?? [];
-  const lastText = [...content].reverse().find(b => b.type === 'text');
-  if (!lastText?.text) {
-    return { statusCode: 502, body: 'No text block in Claude response' };
+
+  if (data.error) {
+    return { statusCode: 502, body: `Claude API error: ${data.error.message}` };
   }
 
-  let parsed;
-  try {
-    parsed = JSON.parse(lastText.text);
-  } catch {
-    return { statusCode: 502, body: 'Claude response was not valid JSON' };
+  const textBlocks = (data.content ?? []).filter(b => b.type === 'text');
+  let opinions = null;
+
+  for (const block of textBlocks) {
+    try {
+      const cleaned = block.text
+        .replace(/```json/g, '')
+        .replace(/```/g, '')
+        .trim();
+      const jsonMatch = cleaned.match(/\{[\s\S]*"popular_opinions"[\s\S]*\}/);
+      if (jsonMatch) {
+        opinions = JSON.parse(jsonMatch[0]);
+        break;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  if (!opinions || !opinions.popular_opinions || !opinions.unpopular_opinions) {
+    return { statusCode: 502, body: 'Could not extract valid opinions from Claude response' };
   }
 
   return {
     statusCode: 200,
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(parsed),
+    body: JSON.stringify(opinions),
   };
 };
