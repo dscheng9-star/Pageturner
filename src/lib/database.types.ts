@@ -1,8 +1,10 @@
 export type ReviewStatus = 'read' | 'backlog' | 'want_to_read';
 export type ReviewEntryType = 'quick' | 'deep' | 'backlog_lite';
+export type ReviewCompletionStatus = 'incomplete' | 'manually_locked' | 'complete';
 export type OpinionType = 'popular' | 'unpopular';
 export type OpinionResponse = 'agree' | 'disagree' | 'neutral';
 export type MatchupResultType = 'win' | 'too_close' | 'skip';
+export type TierBucket = 'dislike' | 'okay' | 'like';
 
 export interface Book {
   id: string;
@@ -11,6 +13,8 @@ export interface Book {
   cover_image_url: string | null;
   description: string | null;
   genre: string | null;
+  genres: string[] | null;
+  tier_bucket: TierBucket | null;
   series_name: string | null;
   series_number: number | null;
   isbn: string | null;
@@ -23,6 +27,10 @@ export interface Review {
   book_id: string;
   status: ReviewStatus;
   entry_type: ReviewEntryType;
+  review_status: ReviewCompletionStatus;
+  tier_complete: boolean;
+  opinions_complete: boolean;
+  matchups_complete: boolean;
   star_rating: number | null;
   review_text: string | null;
   user_added_opinion: string | null;

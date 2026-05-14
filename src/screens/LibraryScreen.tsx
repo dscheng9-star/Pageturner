@@ -53,9 +53,7 @@ export default function LibraryScreen() {
         if (!reviewsMap[r.book_id]) reviewsMap[r.book_id] = [];
         reviewsMap[r.book_id].push(r);
       });
-      setBooks(
-        booksData.map(b => ({ ...b, reviews: reviewsMap[b.id] ?? [] }))
-      );
+      setBooks(booksData.map(b => ({ ...b, reviews: reviewsMap[b.id] ?? [] })));
     }
     setLoading(false);
   }
@@ -68,11 +66,11 @@ export default function LibraryScreen() {
   }
 
   function findDuplicate(gBook: GoogleBook): BookWithReviews | null {
-    const inTitle = gBook.volumeInfo.title.toLowerCase().trim();
+    const inTitle  = gBook.volumeInfo.title.toLowerCase().trim();
     const inAuthor = (gBook.volumeInfo.authors?.[0] ?? '').toLowerCase().trim();
     return (
       books.find(b => {
-        const bTitle = b.title.toLowerCase().trim();
+        const bTitle  = b.title.toLowerCase().trim();
         const bAuthor = b.author.toLowerCase().trim();
         return (
           bTitle === inTitle &&
@@ -94,11 +92,9 @@ export default function LibraryScreen() {
 
   const filteredBooks = books.filter(book => {
     const status = getBookStatus(book);
-    if (filter !== 'all') {
-      if (filter === 'read' && status !== 'read') return false;
-      if (filter === 'want_to_read' && status !== 'want_to_read') return false;
-      if (filter === 'backlog' && status !== 'backlog') return false;
-    }
+    if (filter === 'read'         && status !== 'read')         return false;
+    if (filter === 'want_to_read' && status !== 'want_to_read') return false;
+    if (filter === 'backlog'      && status !== 'backlog')      return false;
     if (search) {
       const q = search.toLowerCase();
       return book.title.toLowerCase().includes(q) || book.author.toLowerCase().includes(q);
@@ -106,7 +102,7 @@ export default function LibraryScreen() {
     return true;
   });
 
-  const sortedBooks = [...filteredBooks].sort((a, b) => b.elo_score - a.elo_score);
+  const sortedBooks  = [...filteredBooks].sort((a, b) => b.elo_score - a.elo_score);
   const ratedLibrary = books.filter(b =>
     b.reviews.some(r => r.status === 'read' || r.status === 'backlog')
   );
@@ -191,11 +187,11 @@ export default function LibraryScreen() {
         ) : (
           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-x-4 gap-y-6">
             {sortedBooks.map(book => {
-              const status = getBookStatus(book);
-              const hasScore = book.reviews.some(
-                r => r.status === 'read' || r.status === 'backlog'
-              );
+              const status      = getBookStatus(book);
+              const hasScore    = book.reviews.some(r => r.status === 'read' || r.status === 'backlog');
               const needsReview = status === 'backlog' || status === 'want_to_read';
+              const displayGenres = book.genres ?? (book.genre ? [book.genre] : []);
+
               return (
                 <div key={book.id} className="flex flex-col">
                   <button
@@ -220,6 +216,14 @@ export default function LibraryScreen() {
                         {book.title}
                       </p>
                       <p className="text-xs text-stone-400 mt-0.5 truncate">{book.author}</p>
+
+                      {/* Genre pills — show first tag only to keep card compact */}
+                      {displayGenres.length > 0 && (
+                        <span className="inline-block mt-1 text-xs bg-stone-100 text-stone-400 px-1.5 py-0.5 rounded-full leading-tight">
+                          {displayGenres[0]}
+                        </span>
+                      )}
+
                       {hasScore ? (
                         <p className="text-xs font-semibold text-stone-700 mt-1 tabular-nums">
                           {book.elo_score.toFixed(1)}
@@ -235,10 +239,7 @@ export default function LibraryScreen() {
 
                   {needsReview && (
                     <button
-                      onClick={e => {
-                        e.stopPropagation();
-                        setCompleteReviewBook(book);
-                      }}
+                      onClick={e => { e.stopPropagation(); setCompleteReviewBook(book); }}
                       className="mt-2 flex items-center justify-center gap-1 py-1.5 border border-stone-200 rounded-lg text-xs font-medium text-stone-600 hover:bg-stone-900 hover:text-white hover:border-stone-900 transition-all"
                     >
                       <BookCheck size={12} />
@@ -260,23 +261,13 @@ export default function LibraryScreen() {
 
       {/* Modals */}
       {showAddBook && (
-        <AddBookModal
-          onClose={() => setShowAddBook(false)}
-          onSelect={handleGoogleBookSelect}
-        />
+        <AddBookModal onClose={() => setShowAddBook(false)} onSelect={handleGoogleBookSelect} />
       )}
       {duplicateCandidate && (
         <DuplicateBookDialog
           existingBook={duplicateCandidate.existing}
-          onUpdateReview={() => {
-            setSelectedBook(duplicateCandidate.existing);
-            setDuplicateCandidate(null);
-          }}
-          onAddAsNew={() => {
-            const gBook = duplicateCandidate.googleBook;
-            setDuplicateCandidate(null);
-            setPendingGoogleBook(gBook);
-          }}
+          onUpdateReview={() => { setSelectedBook(duplicateCandidate.existing); setDuplicateCandidate(null); }}
+          onAddAsNew={() => { const g = duplicateCandidate.googleBook; setDuplicateCandidate(null); setPendingGoogleBook(g); }}
           onClose={() => setDuplicateCandidate(null)}
         />
       )}

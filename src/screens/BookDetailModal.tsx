@@ -1,18 +1,16 @@
 import { useState, useEffect } from 'react';
-import { RotateCcw, Calendar, TrendingUp, TrendingDown, Minus, BookCheck } from 'lucide-react';
+import { RotateCcw, Calendar, BookCheck } from 'lucide-react';
 import Modal from '../components/Modal';
 import BookCover from '../components/BookCover';
 import ReviewModal from './ReviewModal';
 import { supabase } from '../lib/supabase';
-import { eloToScore, scoreToElo } from '../lib/elo';
-import type { Book, Review, Matchup } from '../lib/database.types';
+import type { Book, Review, OpinionSignal } from '../lib/database.types';
 
-interface ScoreEvent {
-  date: string;
-  score: number;
-  delta: number | null;
-  label: string;
-}
+const responseBadge: Record<string, string> = {
+  agree:    'bg-emerald-100 text-emerald-700',
+  disagree: 'bg-red-100 text-red-600',
+  neutral:  'bg-stone-100 text-stone-500',
+};
 
 interface BookDetailModalProps {
   book: Book;
@@ -32,77 +30,36 @@ export default function BookDetailModal({
   onCompleteReview,
 }: BookDetailModalProps) {
   const [showReread, setShowReread] = useState(false);
-  const [scoreHistory, setScoreHistory] = useState<ScoreEvent[]>([]);
-  const [loadingHistory, setLoadingHistory] = useState(true);
+  const [opinionSignals, setOpinionSignals] = useState<OpinionSignal[]>([]);
+  const [loadingOpinions, setLoadingOpinions] = useState(true);
 
   const latestStatus = reviews.length > 0 ? reviews[reviews.length - 1].status : null;
-  const readReviews = reviews.filter(r => r.status === 'read' || r.status === 'backlog');
-  const isRead = readReviews.length > 0;
-  const needsReview = latestStatus === 'backlog' || latestStatus === 'want_to_read';
+  const isRead       = reviews.some(r => r.status === 'read' || r.status === 'backlog');
+  const needsReview  = latestStatus === 'backlog' || latestStatus === 'want_to_read';
+
+  const userAddedOpinion = reviews
+    .map(r => r.user_added_opinion)
+    .filter(Boolean)
+    .at(-1) ?? null;
+
+  const displayGenres: string[] = book.genres ?? (book.genre ? [book.genre] : []);
 
   useEffect(() => {
-    async function buildScoreHistory() {
-      setLoadingHistory(true);
-      const { data: bookMatchups } = await supabase
-        .from('matchups')
+    async function loadOpinions() {
+      setLoadingOpinions(true);
+      const { data } = await supabase
+        .from('opinion_signals')
         .select('*')
-        .or(`winner_book_id.eq.${book.id},loser_book_id.eq.${book.id}`)
+        .eq('book_id', book.id)
         .order('created_at', { ascending: true });
-
-      if (!bookMatchups || bookMatchups.length === 0) {
-        setLoadingHistory(false);
-        return;
-      }
-
-      const { data: allMatchups } = await supabase
-        .from('matchups')
-        .select('*')
-        .order('created_at', { ascending: true });
-
-      const { data: allBooks } = await supabase.from('books').select('id, elo_score');
-      if (!allBooks || !allMatchups) { setLoadingHistory(false); return; }
-
-      const scores: Record<string, number> = {};
-      for (const b of allBooks) scores[b.id] = scoreToElo(5);
-
-      const K = 32;
-      const SCALE = 400;
-      const events: ScoreEvent[] = [];
-      let lastScore: number | null = null;
-
-      for (const m of allMatchups as Matchup[]) {
-        if (m.result_type === 'skip') continue;
-        const wa = scores[m.winner_book_id];
-        const la = scores[m.loser_book_id];
-        if (wa === undefined || la === undefined) continue;
-
-        const expW = 1 / (1 + Math.pow(10, (la - wa) / SCALE));
-        const expL = 1 - expW;
-        const scoreW = m.result_type === 'win' ? 1 : 0.5;
-        const scoreL = 1 - scoreW;
-        scores[m.winner_book_id] = wa + K * (scoreW - expW);
-        scores[m.loser_book_id] = la + K * (scoreL - expL);
-
-        if (m.winner_book_id === book.id || m.loser_book_id === book.id) {
-          const newElo = m.winner_book_id === book.id
-            ? scores[m.winner_book_id]
-            : scores[m.loser_book_id];
-          const newScore = eloToScore(newElo);
-          const delta = lastScore !== null ? Math.round((newScore - lastScore) * 10) / 10 : null;
-          let label: string;
-          if (m.result_type === 'too_close') label = 'Near-tie matchup';
-          else if (m.winner_book_id === book.id) label = 'Won a matchup';
-          else label = 'Lost a matchup';
-
-          events.push({ date: m.created_at, score: newScore, delta, label });
-          lastScore = newScore;
-        }
-      }
-      setScoreHistory(events);
-      setLoadingHistory(false);
+      setOpinionSignals(data ?? []);
+      setLoadingOpinions(false);
     }
-    buildScoreHistory();
+    loadOpinions();
   }, [book.id]);
+
+  const popularOpinions   = opinionSignals.filter(s => s.opinion_type === 'popular');
+  const unpopularOpinions = opinionSignals.filter(s => s.opinion_type === 'unpopular');
 
   if (showReread) {
     return (
@@ -119,16 +76,25 @@ export default function BookDetailModal({
   return (
     <Modal onClose={onClose} wide>
       <div className="p-6">
+        {/* Header */}
         <div className="flex gap-5">
           <BookCover url={book.cover_image_url} title={book.title} size="xl" className="flex-shrink-0" />
           <div className="flex-1 min-w-0 pt-1">
             <h2 className="text-xl font-semibold text-stone-900 leading-snug">{book.title}</h2>
             <p className="text-stone-500 mt-1">{book.author}</p>
-            {book.genre && (
-              <span className="inline-block mt-2 text-xs bg-stone-100 text-stone-500 px-2.5 py-1 rounded-full">
-                {book.genre}
-              </span>
+
+            {/* Genre pills */}
+            {displayGenres.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {displayGenres.map(g => (
+                  <span key={g} className="text-xs bg-stone-100 text-stone-500 px-2.5 py-0.5 rounded-full">
+                    {g}
+                  </span>
+                ))}
+              </div>
             )}
+
+            {/* ELO score */}
             {isRead && (
               <div className="mt-3 flex items-baseline gap-1">
                 <span className="text-3xl font-bold text-stone-900 tabular-nums">
@@ -138,6 +104,7 @@ export default function BookDetailModal({
               </div>
             )}
 
+            {/* Actions */}
             <div className="mt-4 flex flex-wrap gap-2">
               {needsReview && onCompleteReview && (
                 <button
@@ -161,6 +128,7 @@ export default function BookDetailModal({
           </div>
         </div>
 
+        {/* Description */}
         {book.description && (
           <div className="mt-5 pt-5 border-t border-stone-100">
             <h4 className="text-xs font-semibold text-stone-400 uppercase tracking-wider mb-2">Description</h4>
@@ -168,39 +136,52 @@ export default function BookDetailModal({
           </div>
         )}
 
-        {isRead && !loadingHistory && scoreHistory.length > 0 && (
-          <div className="mt-5 pt-5 border-t border-stone-100">
-            <h4 className="text-xs font-semibold text-stone-400 uppercase tracking-wider mb-3">Score history</h4>
-            <div className="space-y-2">
-              {scoreHistory.map((event, i) => (
-                <div key={i} className="flex items-center gap-3">
-                  <div className="w-1.5 h-1.5 rounded-full bg-stone-300 flex-shrink-0" />
-                  <span className="text-xs text-stone-400 w-24 flex-shrink-0">
-                    {new Date(event.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                  </span>
-                  <span className="text-xs text-stone-600 flex-1">{event.label}</span>
-                  <div className="flex items-center gap-1.5 flex-shrink-0">
-                    <span className="text-xs font-semibold tabular-nums text-stone-900">
-                      {event.score.toFixed(1)}
-                    </span>
-                    {event.delta !== null && event.delta !== 0 && (
-                      <span className={`flex items-center gap-0.5 text-xs tabular-nums font-medium ${
-                        event.delta > 0 ? 'text-emerald-600' : 'text-red-500'
-                      }`}>
-                        {event.delta > 0 ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
-                        {event.delta > 0 ? '+' : ''}{event.delta.toFixed(1)}
+        {/* Opinion signals */}
+        {!loadingOpinions && (popularOpinions.length > 0 || unpopularOpinions.length > 0 || userAddedOpinion) && (
+          <div className="mt-5 pt-5 border-t border-stone-100 space-y-5">
+
+            {popularOpinions.length > 0 && (
+              <div>
+                <h4 className="text-xs font-semibold text-stone-400 uppercase tracking-wider mb-3">Popular takes</h4>
+                <div className="space-y-2">
+                  {popularOpinions.map(s => (
+                    <div key={s.id} className="flex items-start gap-2">
+                      <span className={`flex-shrink-0 mt-0.5 text-xs px-2 py-0.5 rounded-full font-medium capitalize ${responseBadge[s.response]}`}>
+                        {s.response}
                       </span>
-                    )}
-                    {event.delta === 0 && (
-                      <span className="flex items-center text-xs text-stone-400"><Minus size={11} /></span>
-                    )}
-                  </div>
+                      <p className="text-sm text-stone-700 leading-snug">{s.statement_text}</p>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </div>
+            )}
+
+            {unpopularOpinions.length > 0 && (
+              <div>
+                <h4 className="text-xs font-semibold text-stone-400 uppercase tracking-wider mb-3">Minority opinions</h4>
+                <div className="space-y-2">
+                  {unpopularOpinions.map(s => (
+                    <div key={s.id} className="flex items-start gap-2">
+                      <span className={`flex-shrink-0 mt-0.5 text-xs px-2 py-0.5 rounded-full font-medium capitalize ${responseBadge[s.response]}`}>
+                        {s.response}
+                      </span>
+                      <p className="text-sm text-stone-700 leading-snug">{s.statement_text}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {userAddedOpinion && (
+              <div>
+                <h4 className="text-xs font-semibold text-stone-400 uppercase tracking-wider mb-2">Your own take</h4>
+                <p className="text-sm text-stone-600 leading-relaxed italic">"{userAddedOpinion}"</p>
+              </div>
+            )}
           </div>
         )}
 
+        {/* Reading history */}
         {reviews.length > 0 && (
           <div className="mt-5 pt-5 border-t border-stone-100">
             <h4 className="text-xs font-semibold text-stone-400 uppercase tracking-wider mb-3">Reading history</h4>
@@ -222,12 +203,12 @@ export default function BookDetailModal({
                           {new Date(r.date_finished).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
                         </span>
                       )}
+                      {r.review_status === 'manually_locked' && (
+                        <span className="text-xs bg-stone-100 text-stone-400 px-1.5 py-0.5 rounded">Locked</span>
+                      )}
                     </div>
                     {r.review_text && (
                       <p className="text-sm text-stone-600 mt-1.5 leading-relaxed">{r.review_text}</p>
-                    )}
-                    {r.user_added_opinion && (
-                      <p className="text-sm text-stone-500 mt-1.5 leading-relaxed italic">"{r.user_added_opinion}"</p>
                     )}
                   </div>
                 </div>

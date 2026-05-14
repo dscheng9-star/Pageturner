@@ -8,13 +8,11 @@ import type { Book, Review, ReviewStatus, ReviewEntryType } from '../lib/databas
 import type { GoogleBook } from '../lib/googleBooks';
 import { extractCoverUrl, extractIsbn, extractGenre } from '../lib/googleBooks';
 
-// Mode 'complete_review' handles backlog/want_to_read → full review upgrade
 type Mode = 'choose' | 'just_finished' | 'already_read' | 'quick' | 'deep' | 'complete_review';
 
 interface ReviewModalProps {
   googleBook?: GoogleBook;
   existingBook?: Book;
-  /** Force directly into the "complete review" flow for backlog/want_to_read books */
   completeReview?: boolean;
   isReread?: boolean;
   onClose: () => void;
@@ -24,7 +22,25 @@ interface ReviewModalProps {
 
 interface SavedState {
   book: Book;
-  reviewId: string;
+  review: Review;
+}
+
+async function classifyGenre(
+  bookTitle: string,
+  bookAuthor: string,
+  bookDescription: string
+): Promise<string[]> {
+  try {
+    const res = await fetch('/.netlify/functions/classify-genre', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bookTitle, bookAuthor, bookDescription }),
+    });
+    if (!res.ok) return ['Fiction'];
+    return await res.json();
+  } catch {
+    return ['Fiction'];
+  }
 }
 
 export default function ReviewModal({
@@ -48,9 +64,10 @@ export default function ReviewModal({
     existingBook?.genre ?? (googleBook ? extractGenre(googleBook) : '') ?? ''
   );
 
-  const title = existingBook?.title ?? googleBook?.volumeInfo.title ?? '';
-  const author = existingBook?.author ?? googleBook?.volumeInfo.authors?.join(', ') ?? '';
-  const coverUrl = existingBook?.cover_image_url ?? (googleBook ? extractCoverUrl(googleBook) : null);
+  const title       = existingBook?.title  ?? googleBook?.volumeInfo.title ?? '';
+  const author      = existingBook?.author ?? googleBook?.volumeInfo.authors?.join(', ') ?? '';
+  const coverUrl    = existingBook?.cover_image_url ?? (googleBook ? extractCoverUrl(googleBook) : null);
+  const description = existingBook?.description ?? googleBook?.volumeInfo.description ?? '';
 
   async function getOrCreateBook(): Promise<Book> {
     if (existingBook) return existingBook;
@@ -69,11 +86,19 @@ export default function ReviewModal({
         series_name: null,
         series_number: null,
         elo_score: 5.0,
+        tier_bucket: null,
+        genres: null,
       })
       .select('*')
       .single();
 
     if (error) throw error;
+
+    // Fire-and-forget genre classification; update book in background
+    classifyGenre(info.title, info.authors?.join(', ') ?? '', info.description ?? '').then(genres => {
+      supabase.from('books').update({ genres }).eq('id', (data as Book).id);
+    });
+
     return data as Book;
   }
 
@@ -88,6 +113,10 @@ export default function ReviewModal({
           book_id: book.id,
           status,
           entry_type: entryType,
+          review_status: 'incomplete',
+          tier_complete: false,
+          opinions_complete: false,
+          matchups_complete: false,
           star_rating: null,
           review_text: reviewText || null,
           user_added_opinion: null,
@@ -95,12 +124,12 @@ export default function ReviewModal({
           date_finished: dateFinished || null,
           is_reread: isReread,
         })
-        .select('id')
+        .select('*')
         .single();
       if (revErr) throw revErr;
 
       if (triggerElo) {
-        setSavedState({ book, reviewId: rev.id });
+        setSavedState({ book, review: rev as Review });
       } else {
         onSaved();
       }
@@ -116,7 +145,7 @@ export default function ReviewModal({
       <EloMatchupModal
         newBook={savedState.book}
         library={library}
-        reviewId={savedState.reviewId}
+        review={savedState.review}
         onDone={onSaved}
       />
     );
@@ -142,11 +171,9 @@ export default function ReviewModal({
     </div>
   );
 
-  // Quick / Deep review panels (shared by just_finished and complete_review)
   if (mode === 'quick' || mode === 'complete_review') {
-    const isComplete = mode === 'complete_review';
     return (
-      <Modal title={isComplete ? 'Complete Review' : 'Quick Review'} onClose={onClose}>
+      <Modal title={mode === 'complete_review' ? 'Complete Review' : 'Quick Review'} onClose={onClose}>
         {bookHeader}
         <div className="p-6 space-y-5">
           <div>
