@@ -1,6 +1,21 @@
+const { createClient } = require('@supabase/supabase-js');
+
+async function verifyToken(event) {
+  const token = event.headers['authorization']?.replace('Bearer ', '');
+  if (!token) return null;
+  const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
+  const { data: { user } } = await supabase.auth.getUser(token);
+  return user;
+}
+
 exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: 'Method Not Allowed' };
+  }
+
+  const user = await verifyToken(event);
+  if (!user) {
+    return { statusCode: 401, body: JSON.stringify({ error: 'Unauthorized' }) };
   }
 
   let bookTitle, bookAuthor;

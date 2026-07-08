@@ -137,7 +137,10 @@ export default function EloMatchupModal({ newBook, library, review, onDone }: El
   useEffect(() => {
     let cancelled = false;
     setOpinionsFetching(true);
-    fetchBookOpinions(newBook.title, newBook.author)
+    supabase.auth.getSession().then(({ data }) => {
+      const token = data.session?.access_token ?? '';
+      return fetchBookOpinions(newBook.title, newBook.author, token);
+    })
       .then(result => { if (!cancelled) setOpinions(result); })
       .catch(err => { if (!cancelled) setOpinionsError(err instanceof Error ? err.message : 'Failed'); })
       .finally(() => { if (!cancelled) setOpinionsFetching(false); });
@@ -213,10 +216,15 @@ export default function EloMatchupModal({ newBook, library, review, onDone }: El
     if (result !== 'skip') {
       const winnerId = winnerIsLeft ? seededBook.id : opponent.id;
       const loserId  = winnerIsLeft ? opponent.id : seededBook.id;
+
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user.id;
+
       const { error: insertErr } = await supabase.from('matchups').insert({
         winner_book_id: winnerId,
         loser_book_id:  loserId,
         result_type:    result,
+        user_id:        userId,
       });
       if (insertErr) { setError(insertErr.message); return; }
 

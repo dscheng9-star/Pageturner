@@ -1,3 +1,13 @@
+const { createClient } = require('@supabase/supabase-js');
+
+async function verifyToken(event) {
+  const token = event.headers['authorization']?.replace('Bearer ', '');
+  if (!token) return null;
+  const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
+  const { data: { user } } = await supabase.auth.getUser(token);
+  return user;
+}
+
 const ALLOWED_GENRES = new Set([
   'High Fantasy','Epic Fantasy','Dark Fantasy','Urban Fantasy','Grimdark','Fairy Tale Retelling','Mythic Fantasy',
   'Hard Sci-Fi','Space Opera','Cyberpunk','Dystopian','Military Sci-Fi','Biopunk','Time Travel',
@@ -17,6 +27,11 @@ const GENRE_LIST = [...ALLOWED_GENRES].join(', ');
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: 'Method Not Allowed' };
+  }
+
+  const user = await verifyToken(event);
+  if (!user) {
+    return { statusCode: 401, body: JSON.stringify({ error: 'Unauthorized' }) };
   }
 
   try {

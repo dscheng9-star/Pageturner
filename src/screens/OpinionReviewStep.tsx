@@ -49,11 +49,15 @@ export default function OpinionReviewStep({
       return;
     }
     setSaving(true);
+    const { data: { session } } = await supabase.auth.getSession();
+    const userId = session?.user.id;
+
     const inserts = cards
       .filter(c => c.response !== null)
       .map(c => ({
         review_id: reviewId,
         book_id: bookId,
+        user_id: userId,
         statement_text: c.text,
         opinion_type: c.type,
         response: c.response!,

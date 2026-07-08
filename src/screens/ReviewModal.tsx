@@ -28,11 +28,12 @@ interface SavedState {
 async function classifyGenre(
   bookTitle: string,
   bookAuthor: string,
-  bookDescription: string
+  bookDescription: string,
+  token: string
 ): Promise<string[]> {
   const res = await fetch('/.netlify/functions/classify-genre', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({ bookTitle, bookAuthor, bookDescription }),
   });
   const body = await res.json();
@@ -71,10 +72,15 @@ export default function ReviewModal({
     if (existingBook) return existingBook;
     if (!googleBook) throw new Error('No book data');
 
+    const { data: { session } } = await supabase.auth.getSession();
+    const userId = session?.user.id;
+    if (!userId) throw new Error('Not authenticated');
+
     const info = googleBook.volumeInfo;
     const { data, error } = await supabase
       .from('books')
       .insert({
+        user_id: userId,
         title: info.title,
         author: info.authors?.join(', ') ?? 'Unknown',
         cover_image_url: extractCoverUrl(googleBook),
@@ -93,7 +99,8 @@ export default function ReviewModal({
     if (error) throw error;
 
     // Fire-and-forget genre classification; update book in background
-    classifyGenre(info.title, info.authors?.join(', ') ?? '', info.description ?? '')
+    const token = session?.access_token ?? '';
+    classifyGenre(info.title, info.authors?.join(', ') ?? '', info.description ?? '', token)
       .then(genres => supabase.from('books').update({ genres }).eq('id', (data as Book).id))
       .catch(err => console.error('[classify-genre]', err));
 
@@ -104,10 +111,15 @@ export default function ReviewModal({
     setSaving(true);
     setError('');
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user.id;
+      if (!userId) throw new Error('Not authenticated');
+
       const book = await getOrCreateBook();
       const { data: rev, error: revErr } = await supabase
         .from('reviews')
         .insert({
+          user_id: userId,
           book_id: book.id,
           status,
           entry_type: entryType,
@@ -115,7 +127,6 @@ export default function ReviewModal({
           tier_complete: false,
           opinions_complete: false,
           matchups_complete: false,
-          star_rating: null,
           review_text: reviewText || null,
           user_added_opinion: null,
           read_count: 1,

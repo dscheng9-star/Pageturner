@@ -15,16 +15,19 @@ export interface Book {
   genre: string | null;
   genres: string[] | null;
   tier_bucket: TierBucket | null;
+  tier: TierBucket | null;
   series_name: string | null;
   series_number: number | null;
   isbn: string | null;
   elo_score: number;
+  user_id: string | null;
   created_at: string;
 }
 
 export interface Review {
   id: string;
   book_id: string;
+  user_id: string | null;
   status: ReviewStatus;
   entry_type: ReviewEntryType;
   review_status: ReviewCompletionStatus;
@@ -44,6 +47,7 @@ export interface Matchup {
   id: string;
   winner_book_id: string;
   loser_book_id: string;
+  user_id: string | null;
   result_type: MatchupResultType;
   created_at: string;
 }
@@ -52,6 +56,7 @@ export interface OpinionSignal {
   id: string;
   review_id: string;
   book_id: string | null;
+  user_id: string | null;
   statement_text: string;
   opinion_type: OpinionType;
   response: OpinionResponse;

@@ -5,11 +5,15 @@ export interface BookOpinions {
 
 export async function fetchBookOpinions(
   bookTitle: string,
-  bookAuthor: string
+  bookAuthor: string,
+  token: string
 ): Promise<BookOpinions> {
   const response = await fetch('/.netlify/functions/fetch-opinions', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
     body: JSON.stringify({ bookTitle, bookAuthor }),
   });
 

@@ -1,10 +1,13 @@
-import { useState } from 'react';
-import { BookOpen, BookMarked, Bookmark, Sparkles } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { BookOpen, BookMarked, Bookmark, Sparkles, LogOut } from 'lucide-react';
+import type { Session } from '@supabase/supabase-js';
+import { supabase } from './lib/supabase';
 import LibraryScreen from './screens/LibraryScreen';
 import WantToReadScreen from './screens/WantToReadScreen';
 import RecommendationsScreen from './screens/RecommendationsScreen';
 import AddBookModal from './screens/AddBookModal';
 import ReviewModal from './screens/ReviewModal';
+import LoginPage from './screens/LoginPage';
 import type { GoogleBook } from './lib/googleBooks';
 
 type Tab = 'library' | 'want_to_read' | 'recommendations';
@@ -16,10 +19,30 @@ const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
 ];
 
 export default function App() {
+  const [session, setSession] = useState<Session | null | undefined>(undefined);
   const [activeTab, setActiveTab] = useState<Tab>('library');
   const [showAddBook, setShowAddBook] = useState(false);
   const [pendingGoogleBook, setPendingGoogleBook] = useState<GoogleBook | null>(null);
   const [libraryRefreshKey, setLibraryRefreshKey] = useState(0);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => setSession(s));
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Still loading auth state
+  if (session === undefined) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="w-6 h-6 border-2 border-stone-200 border-t-stone-900 rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!session) {
+    return <LoginPage />;
+  }
 
   function handleGoogleBookSelect(book: GoogleBook) {
     setShowAddBook(false);
@@ -30,6 +53,10 @@ export default function App() {
     setPendingGoogleBook(null);
     setLibraryRefreshKey(k => k + 1);
     setActiveTab('library');
+  }
+
+  async function handleSignOut() {
+    await supabase.auth.signOut();
   }
 
   return (
@@ -56,12 +83,28 @@ export default function App() {
             </button>
           ))}
         </nav>
+        <button
+          onClick={handleSignOut}
+          className="flex items-center gap-1.5 text-sm text-stone-400 hover:text-stone-700 transition-colors"
+        >
+          <LogOut size={15} />
+          Sign out
+        </button>
       </header>
 
       {/* Mobile header */}
-      <header className="sm:hidden flex items-center gap-2.5 px-5 py-4 border-b border-stone-100 sticky top-0 bg-white z-20">
-        <BookMarked size={20} className="text-stone-900" />
-        <span className="font-semibold text-stone-900 tracking-tight">Pageturner</span>
+      <header className="sm:hidden flex items-center justify-between px-5 py-4 border-b border-stone-100 sticky top-0 bg-white z-20">
+        <div className="flex items-center gap-2">
+          <BookMarked size={20} className="text-stone-900" />
+          <span className="font-semibold text-stone-900 tracking-tight">Pageturner</span>
+        </div>
+        <button
+          onClick={handleSignOut}
+          className="flex items-center gap-1 text-xs text-stone-400 hover:text-stone-700 transition-colors"
+        >
+          <LogOut size={13} />
+          Sign out
+        </button>
       </header>
 
       {/* Main content */}
