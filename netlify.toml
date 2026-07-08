@@ -9,3 +9,9 @@ publish = "dist"
   GEMINI_API_KEY = ""
   SUPABASE_URL = ""
   SUPABASE_ANON_KEY = ""
+
+# SPA fallback — every route (including /auth/callback) loads index.html
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

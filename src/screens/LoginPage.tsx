@@ -1,9 +1,27 @@
-import { BookMarked } from 'lucide-react';
-import { Auth } from '@supabase/auth-ui-react';
-import { ThemeSupa } from '@supabase/auth-ui-shared';
+import { useState } from 'react';
+import { BookMarked, Chrome } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 export default function LoginPage() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleGoogleSignIn() {
+    setLoading(true);
+    setError(null);
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+      },
+    });
+    if (error) {
+      setError(error.message);
+      setLoading(false);
+    }
+    // On success the browser navigates away — no further state update needed.
+  }
+
   return (
     <div className="min-h-screen bg-stone-50 flex flex-col items-center justify-center px-6">
       <div className="w-full max-w-sm">
@@ -18,59 +36,26 @@ export default function LoginPage() {
           </p>
         </div>
 
-        {/* Auth UI */}
-        <div className="bg-white rounded-2xl border border-stone-200 p-6 shadow-sm">
-          <Auth
-            supabaseClient={supabase}
-            appearance={{
-              theme: ThemeSupa,
-              variables: {
-                default: {
-                  colors: {
-                    brand: '#1c1917',
-                    brandAccent: '#44403c',
-                    brandButtonText: '#ffffff',
-                    defaultButtonBackground: '#f5f5f4',
-                    defaultButtonBackgroundHover: '#e7e5e4',
-                    inputBackground: '#ffffff',
-                    inputBorder: '#e7e5e4',
-                    inputBorderHover: '#a8a29e',
-                    inputBorderFocus: '#1c1917',
-                    inputText: '#1c1917',
-                    inputLabelText: '#57534e',
-                    inputPlaceholder: '#a8a29e',
-                  },
-                  radii: {
-                    borderRadiusButton: '0.75rem',
-                    buttonBorderRadius: '0.75rem',
-                    inputBorderRadius: '0.75rem',
-                  },
-                  fontSizes: {
-                    baseBodySize: '14px',
-                    baseInputSize: '14px',
-                    baseLabelSize: '13px',
-                    baseButtonSize: '14px',
-                  },
-                  fonts: {
-                    bodyFontFamily: 'inherit',
-                    buttonFontFamily: 'inherit',
-                    inputFontFamily: 'inherit',
-                    labelFontFamily: 'inherit',
-                  },
-                },
-              },
-              style: {
-                button: { fontWeight: '500', padding: '10px 16px' },
-                anchor: { color: '#57534e' },
-                container: { gap: '14px' },
-                divider: { background: '#e7e5e4' },
-                message: { color: '#57534e', fontSize: '13px' },
-              },
-            }}
-            providers={['google']}
-            onlyThirdPartyProviders
-            redirectTo={window.location.origin}
-          />
+        {/* Sign-in card */}
+        <div className="bg-white rounded-2xl border border-stone-200 p-6 shadow-sm space-y-4">
+          <p className="text-sm font-medium text-stone-700 text-center">Sign in to continue</p>
+
+          <button
+            onClick={handleGoogleSignIn}
+            disabled={loading}
+            className="w-full flex items-center justify-center gap-3 px-4 py-2.5 border border-stone-200 rounded-xl bg-white text-stone-700 text-sm font-medium hover:bg-stone-50 hover:border-stone-300 transition-colors disabled:opacity-60 disabled:cursor-not-allowed shadow-sm"
+          >
+            {loading ? (
+              <span className="w-4 h-4 border-2 border-stone-300 border-t-stone-700 rounded-full animate-spin" />
+            ) : (
+              <Chrome size={16} className="text-stone-500" />
+            )}
+            {loading ? 'Redirecting…' : 'Continue with Google'}
+          </button>
+
+          {error && (
+            <p className="text-xs text-red-500 text-center">{error}</p>
+          )}
         </div>
 
         <p className="text-xs text-stone-400 text-center mt-6 leading-relaxed">

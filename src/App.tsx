@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BookOpen, BookMarked, Bookmark, Sparkles, LogOut } from 'lucide-react';
+import { BookOpen, BookMarked, Bookmark, Sparkles, LogOut, Loader2 } from 'lucide-react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 import LibraryScreen from './screens/LibraryScreen';
@@ -18,22 +18,49 @@ const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: 'recommendations', label: 'For You', icon: <Sparkles size={20} /> },
 ];
 
+function AuthCallbackScreen() {
+  return (
+    <div className="min-h-screen bg-stone-50 flex flex-col items-center justify-center gap-4">
+      <div className="w-10 h-10 rounded-2xl bg-stone-900 flex items-center justify-center">
+        <BookMarked size={20} className="text-white" />
+      </div>
+      <div className="flex items-center gap-2 text-stone-500 text-sm">
+        <Loader2 size={16} className="animate-spin" />
+        Completing sign in…
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
+  // undefined = not yet determined, null = no session, Session = logged in
   const [session, setSession] = useState<Session | null | undefined>(undefined);
   const [activeTab, setActiveTab] = useState<Tab>('library');
   const [showAddBook, setShowAddBook] = useState(false);
   const [pendingGoogleBook, setPendingGoogleBook] = useState<GoogleBook | null>(null);
   const [libraryRefreshKey, setLibraryRefreshKey] = useState(0);
 
+  const isAuthCallback = window.location.pathname === '/auth/callback';
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => setSession(s));
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
+      setSession(s);
+      // After the OAuth callback, clean the URL so users don't land on /auth/callback on refresh.
+      if (s && window.location.pathname === '/auth/callback') {
+        window.history.replaceState(null, '', '/');
+      }
+    });
+
     return () => subscription.unsubscribe();
   }, []);
 
-  // Still loading auth state
+  // While auth state is still resolving, show an appropriate screen.
   if (session === undefined) {
-    return (
+    // If we're on the callback path, show the "Completing sign in" screen
+    // instead of the generic spinner so the user sees meaningful feedback.
+    return isAuthCallback ? <AuthCallbackScreen /> : (
       <div className="min-h-screen bg-white flex items-center justify-center">
         <div className="w-6 h-6 border-2 border-stone-200 border-t-stone-900 rounded-full animate-spin" />
       </div>
