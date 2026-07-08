@@ -150,7 +150,7 @@ export default function EloMatchupModal({ newBook, library, review, onDone }: El
   // If resuming past tier, seed opponents from library
   useEffect(() => {
     if (review.tier_complete && opponents.length === 0) {
-      const bucket = newBook.tier_bucket ?? bucketForScore(newBook.elo_score);
+      const bucket = newBook.tier ?? bucketForScore(newBook.elo_score);
       const count  = matchupCount(library.length);
       const seeded = { ...newBook };
       setSeededBook(seeded);
@@ -172,10 +172,10 @@ export default function EloMatchupModal({ newBook, library, review, onDone }: El
     const seedScore  = tierSeedScore(tier);
     await supabase
       .from('books')
-      .update({ elo_score: seedScore, tier_bucket: bucket })
+      .update({ elo_score: seedScore, tier: bucket })
       .eq('id', newBook.id);
 
-    const seeded = { ...newBook, elo_score: seedScore, tier_bucket: bucket };
+    const seeded = { ...newBook, elo_score: seedScore, tier: bucket };
     setSeededBook(seeded);
     setTierDone(true);
     await markReviewComplete({ tier_complete: true });
@@ -230,8 +230,8 @@ export default function EloMatchupModal({ newBook, library, review, onDone }: El
 
       // Update seeded book's in-memory score for subsequent matchups
       if (result !== 'skip') {
-        const wBucket = seededBook.tier_bucket ?? bucketForScore(seededBook.elo_score);
-        const oBucket = opponent.tier_bucket    ?? bucketForScore(opponent.elo_score);
+        const wBucket = seededBook.tier ?? bucketForScore(seededBook.elo_score);
+        const oBucket = opponent.tier    ?? bucketForScore(opponent.elo_score);
         const { newA } = calcEloUpdate(
           seededBook.elo_score,
           opponent.elo_score,

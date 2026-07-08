@@ -101,19 +101,19 @@ export function selectMatchupCandidates(
   library: Book[],
   count: number
 ): Book[] {
-  const newBucket = newBook.tier_bucket ?? bucketForScore(newBook.elo_score);
+  const newBucket = newBook.tier ?? bucketForScore(newBook.elo_score);
 
   // Only match against same or adjacent bucket
   const eligible = library.filter(b => {
     if (b.id === newBook.id) return false;
-    const bBucket = b.tier_bucket ?? bucketForScore(b.elo_score);
+    const bBucket = b.tier ?? bucketForScore(b.elo_score);
     return bucketsAreAdjacent(newBucket, bBucket);
   });
 
   if (eligible.length === 0) return [];
 
-  const sameBucket = eligible.filter(b => (b.tier_bucket ?? bucketForScore(b.elo_score)) === newBucket);
-  const adjBucket  = eligible.filter(b => (b.tier_bucket ?? bucketForScore(b.elo_score)) !== newBucket);
+  const sameBucket = eligible.filter(b => (b.tier ?? bucketForScore(b.elo_score)) === newBucket);
+  const adjBucket  = eligible.filter(b => (b.tier ?? bucketForScore(b.elo_score)) !== newBucket);
 
   const byProximity = (a: Book, b: Book) =>
     Math.abs(a.elo_score - newBook.elo_score) - Math.abs(b.elo_score - newBook.elo_score);
@@ -151,7 +151,7 @@ export async function recalculateEloFromMatchups(books: Book[]): Promise<void> {
   // Build a bucket map from current DB values (authoritative tier assignment)
   const bucketMap: Record<string, TierBucket> = {};
   for (const b of books) {
-    bucketMap[b.id] = b.tier_bucket ?? bucketForScore(b.elo_score);
+    bucketMap[b.id] = b.tier ?? bucketForScore(b.elo_score);
   }
 
   // Start each book at its bucket seed score
