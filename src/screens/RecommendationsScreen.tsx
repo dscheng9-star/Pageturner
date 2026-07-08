@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Sparkles, Loader2, BookOpen, AlertCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import BookCover from '../components/BookCover';
 
 interface Recommendation {
   title: string;
@@ -10,6 +9,9 @@ interface Recommendation {
 }
 
 async function fetchRecommendations(): Promise<Recommendation[]> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Not authenticated');
+
   const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
   if (!apiKey) throw new Error('No Gemini API key configured');
 
