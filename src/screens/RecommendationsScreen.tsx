@@ -31,7 +31,7 @@ async function fetchRecommendations(): Promise<Recommendation[]> {
   const prompt = `Based on this reader's top-rated books:\n${bookList}\n\nRecommend 3 books they would likely enjoy. Respond with ONLY valid JSON (no markdown, no backticks) in exactly this format:\n[\n  {\n    "title": "Book Title",\n    "author": "Author Name",\n    "reason": "One sentence explaining why they'd enjoy this based on their taste."\n  }\n]`;
 
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
