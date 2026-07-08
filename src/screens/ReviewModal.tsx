@@ -68,39 +68,41 @@ export default function ReviewModal({
   const coverUrl    = existingBook?.cover_image_url ?? (googleBook ? extractCoverUrl(googleBook) : null);
   const description = existingBook?.description ?? googleBook?.volumeInfo.description ?? '';
 
-  async function getOrCreateBook(): Promise<Book> {
+  async function getOrCreateBook(userId: string, accessToken: string): Promise<Book> {
     if (existingBook) return existingBook;
     if (!googleBook) throw new Error('No book data');
 
-    const { data: { session } } = await supabase.auth.getSession();
-    const userId = session?.user.id;
-    if (!userId) throw new Error('Not authenticated');
-
     const info = googleBook.volumeInfo;
+    const payload = {
+      user_id: userId,
+      title: info.title,
+      author: info.authors?.join(', ') ?? 'Unknown',
+      cover_image_url: extractCoverUrl(googleBook),
+      description: info.description ?? null,
+      genre: genre || extractGenre(googleBook) || null,
+      isbn: extractIsbn(googleBook) ?? null,
+      series_name: null,
+      series_number: null,
+      elo_score: 5.0,
+      tier_bucket: null,
+      genres: [] as string[],
+    };
+
+    console.log('[books insert payload]', payload);
+
     const { data, error } = await supabase
       .from('books')
-      .insert({
-        user_id: userId,
-        title: info.title,
-        author: info.authors?.join(', ') ?? 'Unknown',
-        cover_image_url: extractCoverUrl(googleBook),
-        description: info.description ?? null,
-        genre: genre || extractGenre(googleBook),
-        isbn: extractIsbn(googleBook),
-        series_name: null,
-        series_number: null,
-        elo_score: 5.0,
-        tier_bucket: null,
-        genres: null,
-      })
+      .insert(payload)
       .select('*')
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('[books insert error]', error);
+      throw error;
+    }
 
-    // Fire-and-forget genre classification; update book in background
-    const token = session?.access_token ?? '';
-    classifyGenre(info.title, info.authors?.join(', ') ?? '', info.description ?? '', token)
+    // Fire-and-forget genre classification
+    classifyGenre(info.title, info.authors?.join(', ') ?? '', info.description ?? '', accessToken)
       .then(genres => supabase.from('books').update({ genres }).eq('id', (data as Book).id))
       .catch(err => console.error('[classify-genre]', err));
 
@@ -112,10 +114,10 @@ export default function ReviewModal({
     setError('');
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const userId = session?.user.id;
-      if (!userId) throw new Error('Not authenticated');
+      if (!session) throw new Error('Not authenticated — please sign in again');
+      const { id: userId, } = session.user;
 
-      const book = await getOrCreateBook();
+      const book = await getOrCreateBook(userId, session.access_token);
       const { data: rev, error: revErr } = await supabase
         .from('reviews')
         .insert({
