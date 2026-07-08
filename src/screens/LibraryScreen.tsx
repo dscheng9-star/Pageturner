@@ -38,27 +38,14 @@ export default function LibraryScreen() {
 
   async function fetchBooks() {
     setLoading(true);
-
-    const { data: { session } } = await supabase.auth.getSession();
-    console.log('[LibraryScreen] session user id:', session?.user?.id ?? 'NO SESSION');
-    if (!session) {
-      console.warn('[LibraryScreen] fetchBooks called with no session — aborting');
-      setLoading(false);
-      return;
-    }
-
-    const { data: reviewsData, error: reviewsError } = await supabase
+    const { data: reviewsData } = await supabase
       .from('reviews')
       .select('*')
       .order('created_at', { ascending: true });
-    console.log('[LibraryScreen] reviews fetch error:', reviewsError);
-
-    const { data: booksData, error: booksError } = await supabase
+    const { data: booksData } = await supabase
       .from('books')
       .select('*')
       .order('elo_score', { ascending: false });
-    console.log('[LibraryScreen] books fetch error:', booksError);
-    console.log('[LibraryScreen] books count:', booksData?.length ?? 0);
 
     if (booksData) {
       const reviewsMap: Record<string, Review[]> = {};

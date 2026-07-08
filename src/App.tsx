@@ -33,9 +33,8 @@ function AuthCallbackScreen() {
 }
 
 export default function App() {
-  const [session, setSession] = useState<Session | null>(null);
-  // loading stays true until getSession() resolves — no DB query fires before this.
-  const [loading, setLoading] = useState(true);
+  // undefined = not yet determined, null = no session, Session = logged in
+  const [session, setSession] = useState<Session | null | undefined>(undefined);
   const [activeTab, setActiveTab] = useState<Tab>('library');
   const [showAddBook, setShowAddBook] = useState(false);
   const [pendingGoogleBook, setPendingGoogleBook] = useState<GoogleBook | null>(null);
@@ -44,16 +43,11 @@ export default function App() {
   const isAuthCallback = window.location.pathname === '/auth/callback';
 
   useEffect(() => {
-    // Resolve current session from localStorage first, THEN set loading=false.
-    // Child screens only mount after this, so the Supabase client always has
-    // a valid (or definitively absent) auth header before any query fires.
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setLoading(false);
-    });
+    supabase.auth.getSession().then(({ data }) => setSession(data.session));
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
       setSession(s);
+      // After the OAuth callback, clean the URL so users don't land on /auth/callback on refresh.
       if (s && window.location.pathname === '/auth/callback') {
         window.history.replaceState(null, '', '/');
       }
@@ -62,7 +56,10 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  if (loading) {
+  // While auth state is still resolving, show an appropriate screen.
+  if (session === undefined) {
+    // If we're on the callback path, show the "Completing sign in" screen
+    // instead of the generic spinner so the user sees meaningful feedback.
     return isAuthCallback ? <AuthCallbackScreen /> : (
       <div className="min-h-screen bg-white flex items-center justify-center">
         <div className="w-6 h-6 border-2 border-stone-200 border-t-stone-900 rounded-full animate-spin" />

@@ -23,13 +23,6 @@ export default function WantToReadScreen({ onAddBook }: WantToReadScreenProps) {
 
   async function fetchBooks() {
     setLoading(true);
-
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      setLoading(false);
-      return;
-    }
-
     const { data: reviews } = await supabase.from('reviews').select('*').eq('status', 'want_to_read');
     if (!reviews || reviews.length === 0) { setLoading(false); return; }
 
