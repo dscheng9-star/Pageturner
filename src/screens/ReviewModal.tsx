@@ -59,8 +59,8 @@ export default function ReviewModal({
 
   const [reviewText, setReviewText] = useState('');
   const [dateFinished, setDateFinished] = useState('');
-  const [genre, setGenre] = useState(
-    existingBook?.genre ?? (googleBook ? extractGenre(googleBook) : '') ?? ''
+  const [genreInput, setGenreInput] = useState(
+    existingBook?.genres?.[0] ?? (googleBook ? extractGenre(googleBook) : '') ?? ''
   );
 
   const title       = existingBook?.title  ?? googleBook?.volumeInfo.title ?? '';
@@ -73,19 +73,18 @@ export default function ReviewModal({
     if (!googleBook) throw new Error('No book data');
 
     const info = googleBook.volumeInfo;
+    const rawGenre = genreInput || extractGenre(googleBook) || null;
     const payload = {
       user_id: userId,
       title: info.title,
       author: info.authors?.join(', ') ?? 'Unknown',
       cover_image_url: extractCoverUrl(googleBook),
       description: info.description ?? null,
-      genre: genre || extractGenre(googleBook) || null,
+      genres: rawGenre ? [rawGenre] : [],
       isbn: extractIsbn(googleBook) ?? null,
       series_name: null,
       series_number: null,
       elo_score: 5.0,
-      tier_bucket: null,
-      genres: [] as string[],
     };
 
     console.log('[books insert payload]', payload);
@@ -299,8 +298,8 @@ export default function ReviewModal({
             </label>
             <input
               type="text"
-              value={genre}
-              onChange={e => setGenre(e.target.value)}
+              value={genreInput}
+              onChange={e => setGenreInput(e.target.value)}
               placeholder="e.g. Fiction, Mystery, Sci-Fi"
               className="w-full px-3 py-2.5 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-stone-900"
             />

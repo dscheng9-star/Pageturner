@@ -12,9 +12,7 @@ export interface Book {
   author: string;
   cover_image_url: string | null;
   description: string | null;
-  genre: string | null;
   genres: string[] | null;
-  tier_bucket: TierBucket | null;
   tier: TierBucket | null;
   series_name: string | null;
   series_number: number | null;

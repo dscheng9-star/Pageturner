@@ -42,7 +42,7 @@ export default function BookDetailModal({
     .filter(Boolean)
     .at(-1) ?? null;
 
-  const displayGenres: string[] = book.genres ?? (book.genre ? [book.genre] : []);
+  const displayGenres: string[] = book.genres ?? [];
 
   useEffect(() => {
     async function loadOpinions() {

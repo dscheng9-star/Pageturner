@@ -190,7 +190,7 @@ export default function LibraryScreen() {
               const status      = getBookStatus(book);
               const hasScore    = book.reviews.some(r => r.status === 'read' || r.status === 'backlog');
               const needsReview = status === 'backlog' || status === 'want_to_read';
-              const displayGenres = book.genres ?? (book.genre ? [book.genre] : []);
+              const displayGenres = book.genres ?? [];
 
               return (
                 <div key={book.id} className="flex flex-col">

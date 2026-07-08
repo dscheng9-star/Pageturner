@@ -16,7 +16,7 @@ async function fetchRecommendations(): Promise<Recommendation[]> {
   // Fetch top 5 books by ELO score that have been read/backlogged
   const { data: books } = await supabase
     .from('books')
-    .select('title, author, elo_score, genre')
+    .select('title, author, elo_score, genres')
     .order('elo_score', { ascending: false })
     .limit(5);
 
@@ -25,7 +25,7 @@ async function fetchRecommendations(): Promise<Recommendation[]> {
   }
 
   const bookList = books
-    .map((b, i) => `${i + 1}. "${b.title}" by ${b.author} (score: ${b.elo_score.toFixed(1)}/10${b.genre ? `, genre: ${b.genre}` : ''})`)
+    .map((b, i) => `${i + 1}. "${b.title}" by ${b.author} (score: ${b.elo_score.toFixed(1)}/10${b.genres && b.genres.length > 0 ? `, genre: ${b.genres[0]}` : ''})`)
     .join('\n');
 
   const prompt = `Based on this reader's top-rated books:\n${bookList}\n\nRecommend 3 books they would likely enjoy. Respond with ONLY valid JSON (no markdown, no backticks) in exactly this format:\n[\n  {\n    "title": "Book Title",\n    "author": "Author Name",\n    "reason": "One sentence explaining why they'd enjoy this based on their taste."\n  }\n]`;
