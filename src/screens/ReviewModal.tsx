@@ -31,7 +31,7 @@ async function classifyGenre(
   bookDescription: string,
   token: string
 ): Promise<string[]> {
-  const res = await fetch('/.netlify/functions/classify-genre', {
+  const res = await fetch('/api/classify-genre', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({ bookTitle, bookAuthor, bookDescription }),

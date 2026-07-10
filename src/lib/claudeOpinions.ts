@@ -8,7 +8,7 @@ export async function fetchBookOpinions(
   bookAuthor: string,
   token: string
 ): Promise<BookOpinions> {
-  const response = await fetch('/.netlify/functions/fetch-opinions', {
+  const response = await fetch('/api/fetch-opinions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
