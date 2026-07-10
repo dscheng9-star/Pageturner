@@ -45,7 +45,7 @@ exports.handler = async (event) => {
     }
 
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-001:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -59,12 +59,17 @@ exports.handler = async (event) => {
       }
     );
 
-    const data = await response.json();
+    const data = await response.json().catch(() => null);
 
     if (!response.ok) {
+      const errorText = data ? JSON.stringify(data) : await response.text().catch(() => String(response.status));
       return {
         statusCode: 500,
-        body: JSON.stringify({ error: `Gemini API error: ${JSON.stringify(data)}` }),
+        body: JSON.stringify({
+          error: `Gemini API error: ${errorText}`,
+          modelUsed: 'models/gemini-2.0-flash',
+          status: response.status
+        })
       };
     }
 
