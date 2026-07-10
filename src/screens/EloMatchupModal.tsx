@@ -285,7 +285,7 @@ export default function EloMatchupModal({ newBook, library, review, onDone }: El
           <StepProgress tierDone={tierDone} opinionsDone={opinionsDone} matchupsDone={matchupsDone} />
           <div className="p-6 space-y-3">
             <div className="flex gap-4 pb-4 border-b border-stone-100">
-              <BookCover url={newBook.cover_image_url} title={newBook.title} size="md" className="flex-shrink-0" />
+              <BookCover url={newBook.cover_image_url} title={newBook.title} author={newBook.author} size="md" className="flex-shrink-0" />
               <div className="flex-1 min-w-0 pt-1">
                 <h3 className="font-semibold text-stone-900 leading-snug">{newBook.title}</h3>
                 <p className="text-sm text-stone-500 mt-0.5">{newBook.author}</p>
@@ -398,7 +398,7 @@ export default function EloMatchupModal({ newBook, library, review, onDone }: El
               onClick={() => handleMatchupResult('win', true)}
               className="group flex flex-col items-center gap-3 p-4 border-2 border-stone-200 rounded-2xl hover:border-stone-900 hover:bg-stone-50 transition-all"
             >
-              <BookCover url={seededBook.cover_image_url} title={seededBook.title} size="lg" />
+              <BookCover url={seededBook.cover_image_url} title={seededBook.title} author={seededBook.author} size="lg" />
               <div className="text-center">
                 <p className="text-xs font-semibold text-stone-900 line-clamp-2 leading-snug">{seededBook.title}</p>
                 <p className="text-xs text-stone-400 mt-0.5 truncate">{seededBook.author}</p>
@@ -413,7 +413,7 @@ export default function EloMatchupModal({ newBook, library, review, onDone }: El
               onClick={() => handleMatchupResult('win', false)}
               className="group flex flex-col items-center gap-3 p-4 border-2 border-stone-200 rounded-2xl hover:border-stone-900 hover:bg-stone-50 transition-all"
             >
-              <BookCover url={opponent.cover_image_url} title={opponent.title} size="lg" />
+              <BookCover url={opponent.cover_image_url} title={opponent.title} author={opponent.author} size="lg" />
               <div className="text-center">
                 <p className="text-xs font-semibold text-stone-900 line-clamp-2 leading-snug">{opponent.title}</p>
                 <p className="text-xs text-stone-400 mt-0.5 truncate">{opponent.author}</p>

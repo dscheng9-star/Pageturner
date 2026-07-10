@@ -85,7 +85,7 @@ export default function AddBookModal({ onClose, onSelect }: AddBookModalProps) {
                   onClick={() => onSelect(book)}
                   className="w-full flex gap-4 p-3 rounded-xl hover:bg-stone-50 transition-colors text-left group"
                 >
-                  <BookCover url={cover} title={info.title} size="sm" className="flex-shrink-0" />
+                  <BookCover url={cover} title={info.title} author={author} size="sm" className="flex-shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-stone-900 text-sm leading-snug line-clamp-2">{info.title}</p>
                     <p className="text-stone-500 text-xs mt-0.5">{author}</p>

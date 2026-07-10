@@ -6,7 +6,7 @@ import EloMatchupModal from './EloMatchupModal';
 import { supabase } from '../lib/supabase';
 import type { Book, Review, ReviewStatus, ReviewEntryType } from '../lib/database.types';
 import type { GoogleBook } from '../lib/googleBooks';
-import { extractCoverUrl, extractIsbn, extractGenre } from '../lib/googleBooks';
+import { extractCoverUrl, extractIsbn } from '../lib/googleBooks';
 
 type Mode = 'choose' | 'just_finished' | 'already_read' | 'quick' | 'deep' | 'complete_review';
 
@@ -59,9 +59,6 @@ export default function ReviewModal({
 
   const [reviewText, setReviewText] = useState('');
   const [dateFinished, setDateFinished] = useState('');
-  const [genreInput, setGenreInput] = useState(
-    existingBook?.genres?.[0] ?? (googleBook ? extractGenre(googleBook) : '') ?? ''
-  );
 
   const title       = existingBook?.title  ?? googleBook?.volumeInfo.title ?? '';
   const author      = existingBook?.author ?? googleBook?.volumeInfo.authors?.join(', ') ?? '';
@@ -73,7 +70,7 @@ export default function ReviewModal({
     if (!googleBook) throw new Error('No book data');
 
     const info = googleBook.volumeInfo;
-    const rawGenre = genreInput || extractGenre(googleBook) || null;
+    const rawGenre = null;
     const payload = {
       user_id: userId,
       title: info.title,
@@ -163,7 +160,7 @@ export default function ReviewModal({
 
   const bookHeader = (
     <div className="flex gap-4 p-6 border-b border-stone-100">
-      <BookCover url={coverUrl} title={title} size="md" className="flex-shrink-0" />
+      <BookCover url={coverUrl} title={title} author={author} size="md" className="flex-shrink-0" />
       <div className="flex-1 min-w-0 pt-1">
         <h3 className="font-semibold text-stone-900 leading-snug">{title}</h3>
         <p className="text-sm text-stone-500 mt-0.5">{author}</p>
@@ -292,18 +289,6 @@ export default function ReviewModal({
       <Modal title="Backlog Entry" onClose={onClose}>
         {bookHeader}
         <div className="p-6 space-y-5">
-          <div>
-            <label className="block text-sm font-medium text-stone-700 mb-2">
-              Genre <span className="text-stone-400 font-normal">(optional)</span>
-            </label>
-            <input
-              type="text"
-              value={genreInput}
-              onChange={e => setGenreInput(e.target.value)}
-              placeholder="e.g. Fiction, Mystery, Sci-Fi"
-              className="w-full px-3 py-2.5 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-stone-900"
-            />
-          </div>
           <div>
             <label className="block text-sm font-medium text-stone-700 mb-2">
               Notes <span className="text-stone-400 font-normal">(optional)</span>

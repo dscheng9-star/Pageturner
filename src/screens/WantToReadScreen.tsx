@@ -88,6 +88,7 @@ export default function WantToReadScreen({ onAddBook }: WantToReadScreenProps) {
                 <BookCover
                   url={book.cover_image_url}
                   title={book.title}
+                  author={book.author}
                   size="md"
                   className="w-full group-hover:shadow-md transition-shadow"
                 />

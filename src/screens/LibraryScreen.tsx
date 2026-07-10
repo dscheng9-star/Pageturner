@@ -202,6 +202,7 @@ export default function LibraryScreen() {
                       <BookCover
                         url={book.cover_image_url}
                         title={book.title}
+                        author={book.author}
                         size="md"
                         className="w-full group-hover:shadow-md transition-shadow"
                       />
@@ -243,7 +244,7 @@ export default function LibraryScreen() {
                       className="mt-2 flex items-center justify-center gap-1 py-1.5 border border-stone-200 rounded-lg text-xs font-medium text-stone-600 hover:bg-stone-900 hover:text-white hover:border-stone-900 transition-all"
                     >
                       <BookCheck size={12} />
-                      Complete Review
+                      {status === 'want_to_read' ? "I've Finished Reading This" : 'Complete Review'}
                     </button>
                   )}
                 </div>

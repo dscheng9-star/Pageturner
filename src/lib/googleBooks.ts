@@ -5,6 +5,7 @@ export interface GoogleBook {
     authors?: string[];
     description?: string;
     categories?: string[];
+    language?: string;
     imageLinks?: {
       thumbnail?: string;
       smallThumbnail?: string;
@@ -81,7 +82,12 @@ export async function searchBooks(query: string): Promise<GoogleBook[]> {
     throw new Error(`Google Books API returned ${res.status}: ${res.statusText}`);
   }
   const data: GoogleBooksResponse = await res.json();
-  return data.items ?? [];
+  const items = data.items ?? [];
+  return items.sort((a, b) => {
+    const aEn = a.volumeInfo.language === 'en' ? 0 : 1;
+    const bEn = b.volumeInfo.language === 'en' ? 0 : 1;
+    return aEn - bEn;
+  });
 }
 
 export function extractCoverUrl(book: GoogleBook): string | null {

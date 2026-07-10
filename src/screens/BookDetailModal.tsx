@@ -78,7 +78,7 @@ export default function BookDetailModal({
       <div className="p-6">
         {/* Header */}
         <div className="flex gap-5">
-          <BookCover url={book.cover_image_url} title={book.title} size="xl" className="flex-shrink-0" />
+          <BookCover url={book.cover_image_url} title={book.title} author={book.author} size="xl" className="flex-shrink-0" />
           <div className="flex-1 min-w-0 pt-1">
             <h2 className="text-xl font-semibold text-stone-900 leading-snug">{book.title}</h2>
             <p className="text-stone-500 mt-1">{book.author}</p>
@@ -112,7 +112,7 @@ export default function BookDetailModal({
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-stone-900 text-white rounded-lg text-sm font-medium hover:bg-stone-700 transition-colors"
                 >
                   <BookCheck size={14} />
-                  Complete Review
+                  {latestStatus === 'want_to_read' ? "I've Finished Reading This" : 'Complete Review'}
                 </button>
               )}
               {isRead && (
