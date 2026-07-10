@@ -1,7 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-export async function assembleTasteProfile(supabase: SupabaseClient): Promise<string | null> {
-  // Fetch all books with completed reviews, joining opinion_signals via reviews
+export interface TasteProfileResult {
+  profile: string;
+  completedReviewCount: number;
+}
+
+export async function assembleTasteProfile(supabase: SupabaseClient): Promise<TasteProfileResult | null> {
   const { data: books } = await supabase
     .from('books')
     .select(`
@@ -44,7 +48,6 @@ export async function assembleTasteProfile(supabase: SupabaseClient): Promise<st
   // Collect opinion patterns across all reviews
   const opinionPatterns: Record<string, string[]> = {};
   books.forEach(book => {
-    // reviews is an array; iterate all completed reviews for this book
     const reviewsArr = Array.isArray(book.reviews) ? book.reviews : [book.reviews];
     reviewsArr.forEach((rev: { opinion_signals?: { statement_text: string; response: string }[] }) => {
       rev.opinion_signals?.forEach(signal => {
@@ -87,5 +90,5 @@ Things this reader tends to DISAGREE with in reviews:
 ${(opinionPatterns['disagree'] ?? []).slice(0, 8).map(s => `- ${s}`).join('\n')}
 `.trim();
 
-  return profile;
+  return { profile, completedReviewCount: books.length };
 }

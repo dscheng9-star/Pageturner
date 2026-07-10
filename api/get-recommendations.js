@@ -4,7 +4,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { tasteProfile } = req.body;
+    const { tasteProfile, excludedTitles = [] } = req.body;
 
     if (!process.env.ANTHROPIC_API_KEY) {
       return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured' });
@@ -13,6 +13,10 @@ export default async function handler(req, res) {
     if (!tasteProfile) {
       return res.status(400).json({ error: 'No taste profile provided' });
     }
+
+    const exclusionNote = excludedTitles.length > 0
+      ? `\nDo not recommend any of these previously suggested books: ${excludedTitles.join(', ')}\n`
+      : '';
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -31,7 +35,7 @@ export default async function handler(req, res) {
 
 READER'S TASTE PROFILE:
 ${tasteProfile}
-
+${exclusionNote}
 INSTRUCTIONS:
 - Recommend books the reader is likely to love based on their highest-rated books and genre preferences
 - Consider their opinion signals — if they consistently agree with certain themes or disagree with others, factor that in
