@@ -15,6 +15,8 @@ interface ReviewModalProps {
   existingBook?: Book;
   completeReview?: boolean;
   isReread?: boolean;
+  // If provided, skip date/entry-type steps and go directly into EloMatchupModal to resume
+  incompleteReview?: Review;
   onClose: () => void;
   onSaved: () => void;
   library?: Book[];
@@ -47,15 +49,22 @@ export default function ReviewModal({
   existingBook,
   completeReview = false,
   isReread = false,
+  incompleteReview,
   onClose,
   onSaved,
   library = [],
 }: ReviewModalProps) {
+  // If we have an incomplete review to resume, go straight to EloMatchupModal
+  const [savedState, setSavedState] = useState<SavedState | null>(
+    incompleteReview && existingBook
+      ? { book: existingBook, review: incompleteReview }
+      : null
+  );
+
   const initialMode: Mode = completeReview ? 'complete_review' : isReread ? 'date' : 'choose';
   const [mode, setMode] = useState<Mode>(initialMode);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [savedState, setSavedState] = useState<SavedState | null>(null);
 
   const [reviewText, setReviewText] = useState('');
   const [dateFinished, setDateFinished] = useState(() => new Date().toISOString().slice(0, 10));
@@ -168,6 +177,7 @@ export default function ReviewModal({
         newBook={savedState.book}
         library={library}
         review={savedState.review}
+        isResuming={!!incompleteReview}
         onDone={onSaved}
       />
     );

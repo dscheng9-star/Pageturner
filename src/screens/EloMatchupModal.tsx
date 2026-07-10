@@ -24,6 +24,7 @@ interface EloMatchupModalProps {
   newBook: Book;
   library: Book[];
   review: Review;
+  isResuming?: boolean;
   onDone: () => void;
 }
 
@@ -109,7 +110,42 @@ function LockConfirmDialog({
   );
 }
 
-export default function EloMatchupModal({ newBook, library, review, onDone }: EloMatchupModalProps) {
+// --- Resume banner ---
+function ResumeBanner({
+  dateSet,
+  tierDone,
+  opinionsDone,
+  matchupsDone,
+}: {
+  dateSet: boolean;
+  tierDone: boolean;
+  opinionsDone: boolean;
+  matchupsDone: boolean;
+}) {
+  const steps = [
+    { label: 'Date', done: dateSet },
+    { label: 'Tier placement', done: tierDone },
+    { label: 'Opinions', done: opinionsDone },
+    { label: 'Head to head', done: matchupsDone },
+  ];
+  return (
+    <div className="mx-6 mt-4 mb-1 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl">
+      <p className="text-xs font-semibold text-amber-800 mb-2">Continuing your review</p>
+      <div className="flex flex-wrap gap-x-4 gap-y-1">
+        {steps.map(step => (
+          <span key={step.label} className="flex items-center gap-1 text-xs text-amber-700">
+            {step.done
+              ? <Check size={11} className="text-emerald-500" />
+              : <span className="w-2.5 h-2.5 rounded-full border border-amber-400 inline-block" />}
+            {step.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export default function EloMatchupModal({ newBook, library, review, isResuming = false, onDone }: EloMatchupModalProps) {
   // Determine resume phase from existing review step state
   const resumePhase = (): Phase => {
     if (!review.tier_complete) return 'tier';
@@ -284,6 +320,14 @@ export default function EloMatchupModal({ newBook, library, review, onDone }: El
       <>
         <Modal title="Rate this book" onClose={onDone}>
           <StepProgress tierDone={tierDone} opinionsDone={opinionsDone} matchupsDone={matchupsDone} />
+          {isResuming && (
+            <ResumeBanner
+              dateSet
+              tierDone={tierDone}
+              opinionsDone={opinionsDone}
+              matchupsDone={matchupsDone}
+            />
+          )}
           <div className="p-6 space-y-3">
             <div className="flex gap-4 pb-4 border-b border-stone-100">
               <BookCover url={newBook.cover_image_url} title={newBook.title} author={newBook.author} size="md" className="flex-shrink-0" />
@@ -328,6 +372,14 @@ export default function EloMatchupModal({ newBook, library, review, onDone }: El
       <>
         <Modal title="What readers are saying" onClose={onDone} wide>
           <StepProgress tierDone={tierDone} opinionsDone={opinionsDone} matchupsDone={matchupsDone} />
+          {isResuming && (
+            <ResumeBanner
+              dateSet
+              tierDone={tierDone}
+              opinionsDone={opinionsDone}
+              matchupsDone={matchupsDone}
+            />
+          )}
           <OpinionReviewStep
             reviewId={review.id}
             bookId={newBook.id}
@@ -388,6 +440,14 @@ export default function EloMatchupModal({ newBook, library, review, onDone }: El
     <>
       <Modal title="Head-to-head" onClose={onDone} wide>
         <StepProgress tierDone={tierDone} opinionsDone={opinionsDone} matchupsDone={matchupsDone} />
+        {isResuming && (
+          <ResumeBanner
+            dateSet
+            tierDone={tierDone}
+            opinionsDone={opinionsDone}
+            matchupsDone={matchupsDone}
+          />
+        )}
         <div className="p-6 space-y-5">
           <div className="flex items-center gap-3">
             <div className="flex-1 h-1.5 bg-stone-100 rounded-full overflow-hidden">

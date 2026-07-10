@@ -33,6 +33,7 @@ export default function LibraryScreen() {
   const [pendingGoogleBook, setPendingGoogleBook] = useState<GoogleBook | null>(null);
   const [selectedBook, setSelectedBook] = useState<BookWithReviews | null>(null);
   const [completeReviewBook, setCompleteReviewBook] = useState<BookWithReviews | null>(null);
+  const [rereadBook, setRereadBook] = useState<BookWithReviews | null>(null);
   const [duplicateCandidate, setDuplicateCandidate] = useState<{
     existing: BookWithReviews;
     googleBook: GoogleBook;
@@ -357,7 +358,7 @@ export default function LibraryScreen() {
       {duplicateCandidate && (
         <DuplicateBookDialog
           existingBook={duplicateCandidate.existing}
-          onUpdateReview={() => { setSelectedBook(duplicateCandidate.existing); setDuplicateCandidate(null); }}
+          onUpdateReview={() => { setRereadBook(duplicateCandidate.existing); setDuplicateCandidate(null); }}
           onAddAsNew={() => { const g = duplicateCandidate.googleBook; setDuplicateCandidate(null); setPendingGoogleBook(g); }}
           onClose={() => setDuplicateCandidate(null)}
         />
@@ -370,15 +371,35 @@ export default function LibraryScreen() {
           onSaved={() => { setPendingGoogleBook(null); fetchBooks(); }}
         />
       )}
-      {completeReviewBook && (
+      {rereadBook && (
         <ReviewModal
-          existingBook={completeReviewBook}
-          completeReview
+          existingBook={rereadBook}
+          isReread
           library={ratedLibrary}
-          onClose={() => setCompleteReviewBook(null)}
-          onSaved={() => { setCompleteReviewBook(null); fetchBooks(); }}
+          onClose={() => setRereadBook(null)}
+          onSaved={() => { setRereadBook(null); fetchBooks(); }}
         />
       )}
+      {completeReviewBook && (() => {
+        const incompleteReview = completeReviewBook.reviews.find(r => r.review_status === 'incomplete');
+        return incompleteReview ? (
+          <ReviewModal
+            existingBook={completeReviewBook}
+            incompleteReview={incompleteReview}
+            library={ratedLibrary}
+            onClose={() => setCompleteReviewBook(null)}
+            onSaved={() => { setCompleteReviewBook(null); fetchBooks(); }}
+          />
+        ) : (
+          <ReviewModal
+            existingBook={completeReviewBook}
+            completeReview
+            library={ratedLibrary}
+            onClose={() => setCompleteReviewBook(null)}
+            onSaved={() => { setCompleteReviewBook(null); fetchBooks(); }}
+          />
+        );
+      })()}
       {selectedBook && (
         <BookDetailModal
           book={selectedBook}

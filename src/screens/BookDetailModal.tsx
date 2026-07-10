@@ -38,6 +38,11 @@ export default function BookDetailModal({
   const isRead       = reviews.some(r => r.status === 'read' || r.status === 'backlog');
   const needsReview  = latestStatus === 'backlog' || latestStatus === 'want_to_read';
 
+  // Find any incomplete review to resume (takes priority over starting a new re-read)
+  const incompleteReview = reviews.find(r => r.review_status === 'incomplete') ?? null;
+  const allReviewsDone   = reviews.length > 0 &&
+    reviews.every(r => r.review_status === 'complete' || r.review_status === 'manually_locked');
+
   const userAddedOpinion = reviews
     .map(r => r.user_added_opinion)
     .filter(Boolean)
@@ -66,7 +71,8 @@ export default function BookDetailModal({
     return (
       <ReviewModal
         existingBook={book}
-        isReread
+        isReread={!incompleteReview}
+        incompleteReview={incompleteReview ?? undefined}
         library={library}
         onClose={() => setShowReread(false)}
         onSaved={() => { setShowReread(false); onRefresh(); }}
@@ -111,7 +117,16 @@ export default function BookDetailModal({
                   {latestStatus === 'want_to_read' ? "I've Finished Reading This" : 'Complete Review'}
                 </button>
               )}
-              {isRead && (
+              {isRead && incompleteReview && (
+                <button
+                  onClick={() => setShowReread(true)}
+                  className="flex items-center gap-1.5 text-sm text-amber-600 hover:text-amber-800 transition-colors font-medium"
+                >
+                  <RotateCcw size={14} />
+                  Resume review
+                </button>
+              )}
+              {isRead && !incompleteReview && allReviewsDone && (
                 <button
                   onClick={() => setShowReread(true)}
                   className="flex items-center gap-1.5 text-sm text-stone-500 hover:text-stone-900 transition-colors"
