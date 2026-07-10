@@ -13,6 +13,7 @@ import {
   bucketForScore,
 } from '../lib/elo';
 import { fetchBookOpinions } from '../lib/claudeOpinions';
+import { getBookGenreGroup, type GenreGroupName } from '../lib/genreGroups';
 import type { Book, Review, MatchupResultType } from '../lib/database.types';
 import type { BookOpinions } from '../lib/claudeOpinions';
 
@@ -28,7 +29,7 @@ interface EloMatchupModalProps {
 
 function matchupCount(librarySize: number): number {
   if (librarySize < 10) return 4;
-  if (librarySize < 25) return 6;
+  if (librarySize <= 30) return 6;
   return 8;
 }
 
@@ -376,6 +377,15 @@ export default function EloMatchupModal({ newBook, library, review, onDone }: El
   const progress = currentIndex + 1;
   const total    = opponents.length;
 
+  const newGroup = getBookGenreGroup(newBook);
+  const opponentGroup = getBookGenreGroup(opponent);
+  const isCrossGroup = !!newGroup && !!opponentGroup && newGroup !== opponentGroup;
+  const contextLabel = !newGroup || !opponentGroup
+    ? null
+    : isCrossGroup
+      ? 'Cross-genre comparison'
+      : `Comparing within ${newGroup.replace(/_/g, ' ').toLowerCase()}`;
+
   return (
     <>
       <Modal title="Head-to-head" onClose={onDone} wide>
@@ -392,6 +402,10 @@ export default function EloMatchupModal({ newBook, library, review, onDone }: El
           </div>
 
           <p className="text-sm text-stone-600 text-center">Which did you prefer?</p>
+
+          {contextLabel && (
+            <p className="text-xs text-stone-400 text-center -mt-2">{contextLabel}</p>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             <button

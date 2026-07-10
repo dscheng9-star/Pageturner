@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { getBookGenreGroup, canBooksMatch, type GenreGroupName } from './genreGroups';
 import type { Book, MatchupResultType, TierBucket } from './database.types';
 
 // Bucket score ranges (display scale 0–10)
@@ -102,32 +103,41 @@ export function selectMatchupCandidates(
   count: number
 ): Book[] {
   const newBucket = newBook.tier ?? bucketForScore(newBook.elo_score);
+  const newGroup = getBookGenreGroup(newBook);
 
-  // Only match against same or adjacent bucket
+  // Only match against books that pass the genre compatibility check
+  // AND are in the same or adjacent ELO bucket
   const eligible = library.filter(b => {
     if (b.id === newBook.id) return false;
     const bBucket = b.tier ?? bucketForScore(b.elo_score);
-    return bucketsAreAdjacent(newBucket, bBucket);
+    return bucketsAreAdjacent(newBucket, bBucket) && canBooksMatch(newBook, b);
   });
 
   if (eligible.length === 0) return [];
 
-  const sameBucket = eligible.filter(b => (b.tier ?? bucketForScore(b.elo_score)) === newBucket);
-  const adjBucket  = eligible.filter(b => (b.tier ?? bucketForScore(b.elo_score)) !== newBucket);
+  // Cap matchups at the number of eligible opponents
+  const actualCount = Math.min(count, eligible.length);
+
+  const sameGroup = eligible.filter(b => getBookGenreGroup(b) === newGroup);
+  const crossGroup = eligible.filter(b => {
+    const g = getBookGenreGroup(b);
+    return g !== newGroup;
+  });
 
   const byProximity = (a: Book, b: Book) =>
     Math.abs(a.elo_score - newBook.elo_score) - Math.abs(b.elo_score - newBook.elo_score);
 
-  sameBucket.sort(byProximity);
-  adjBucket.sort(byProximity);
+  sameGroup.sort(byProximity);
+  crossGroup.sort(byProximity);
 
-  const sameCount = Math.min(Math.round(count * 0.7), sameBucket.length);
-  const adjCount  = Math.min(count - sameCount, adjBucket.length);
-  const extra     = count - sameCount - adjCount;
+  // 80% same-group, 20% cross-group
+  const sameCount = Math.min(Math.round(actualCount * 0.8), sameGroup.length);
+  const crossCount = Math.min(actualCount - sameCount, crossGroup.length);
+  const extra = actualCount - sameCount - crossCount;
 
   const picked = [
-    ...sameBucket.slice(0, sameCount + extra),
-    ...adjBucket.slice(0, adjCount),
+    ...sameGroup.slice(0, sameCount + extra),
+    ...crossGroup.slice(0, crossCount),
   ];
 
   // Fisher-Yates shuffle
@@ -136,7 +146,13 @@ export function selectMatchupCandidates(
     [picked[i], picked[j]] = [picked[j], picked[i]];
   }
 
-  return picked.slice(0, count);
+  return picked.slice(0, actualCount);
+}
+
+/** Returns the genre group name for display, or null if the book has no group. */
+export function getMatchupContextLabel(book: Book): { group: GenreGroupName | null; isCrossGroup: boolean } | null {
+  const group = getBookGenreGroup(book);
+  return group ? { group, isCrossGroup: false } : null;
 }
 
 // ---------- full recalculation from matchup history ----------
