@@ -6,6 +6,12 @@ export interface TasteProfileResult {
 }
 
 export async function assembleTasteProfile(supabase: SupabaseClient): Promise<TasteProfileResult | null> {
+  // Fetch ALL books in the library for exclusion (regardless of status)
+  const { data: allBooks } = await supabase
+    .from('books')
+    .select('title, author');
+
+  // Fetch only completed books for taste analysis
   const { data: books } = await supabase
     .from('books')
     .select(`
@@ -63,6 +69,8 @@ export async function assembleTasteProfile(supabase: SupabaseClient): Promise<Ta
   const okayBooks    = books.filter(b => b.tier === 'okay');
   const dislikeBooks = books.filter(b => b.tier === 'dislike');
 
+  const exclusionList = (allBooks ?? books).map(b => `"${b.title}" by ${b.author}`).join(', ');
+
   const profile = `
 LIBRARY OVERVIEW:
 Total books reviewed: ${books.length}
@@ -79,8 +87,8 @@ ${bottomBooks.map(b => `- "${b.title}" by ${b.author} | Genres: ${b.genres?.join
 GENRE PREFERENCES (by average rating):
 ${genreAverages.map(g => `- ${g.genre}: avg ${g.average}/10 across ${g.count} book(s)`).join('\n')}
 
-COMPLETE LIBRARY (for exclusion — do not recommend these):
-${books.map(b => `"${b.title}" by ${b.author}`).join(', ')}
+COMPLETE LIBRARY (for exclusion — do not recommend ANY of these):
+${exclusionList}
 
 OPINION PATTERNS:
 Things this reader tends to AGREE with in reviews:

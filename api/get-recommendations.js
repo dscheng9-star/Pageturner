@@ -15,7 +15,7 @@ export default async function handler(req, res) {
     }
 
     const exclusionNote = excludedTitles.length > 0
-      ? `\nDo not recommend any of these previously suggested books: ${excludedTitles.join(', ')}\n`
+      ? `\nPREVIOUSLY RECOMMENDED (do not suggest these again this session):\n${excludedTitles.join(', ')}\n`
       : '';
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -39,7 +39,7 @@ ${exclusionNote}
 INSTRUCTIONS:
 - Recommend books the reader is likely to love based on their highest-rated books and genre preferences
 - Consider their opinion signals — if they consistently agree with certain themes or disagree with others, factor that in
-- Avoid recommending books already in their library
+- CRITICAL: Never recommend any book listed under COMPLETE LIBRARY — these are all books the reader has already read, wants to read, or has saved. Recommending any of these is a failure.
 - Include a mix of well-known and lesser-known titles
 - For series, recommend the first book only
 - Weight recommendations heavily toward genres they rate highest
