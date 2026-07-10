@@ -1,12 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Bookmark, Plus } from 'lucide-react';
+import { Bookmark, Plus, BookCheck, Loader2 } from 'lucide-react';
 import BookCover from '../components/BookCover';
-import AddBookModal from './AddBookModal';
 import ReviewModal from './ReviewModal';
 import BookDetailModal from './BookDetailModal';
 import { supabase } from '../lib/supabase';
 import type { Book, Review } from '../lib/database.types';
-import type { GoogleBook } from '../lib/googleBooks';
 
 interface BookWithReviews extends Book {
   reviews: Review[];
@@ -20,14 +18,28 @@ export default function WantToReadScreen({ onAddBook }: WantToReadScreenProps) {
   const [books, setBooks] = useState<BookWithReviews[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedBook, setSelectedBook] = useState<BookWithReviews | null>(null);
+  // book whose "I've Finished Reading This" flow is in progress
+  const [finishingBook, setFinishingBook] = useState<BookWithReviews | null>(null);
+  const [promotingId, setPromotingId] = useState<string | null>(null);
 
   async function fetchBooks() {
     setLoading(true);
-    const { data: reviews } = await supabase.from('reviews').select('*').eq('status', 'want_to_read');
-    if (!reviews || reviews.length === 0) { setLoading(false); return; }
+    const { data: reviews } = await supabase
+      .from('reviews')
+      .select('*')
+      .eq('status', 'want_to_read');
+    if (!reviews || reviews.length === 0) {
+      setBooks([]);
+      setLoading(false);
+      return;
+    }
 
     const bookIds = [...new Set(reviews.map(r => r.book_id))];
-    const { data: booksData } = await supabase.from('books').select('*').in('id', bookIds).order('created_at', { ascending: false });
+    const { data: booksData } = await supabase
+      .from('books')
+      .select('*')
+      .in('id', bookIds)
+      .order('created_at', { ascending: false });
 
     if (booksData) {
       const reviewsMap: Record<string, Review[]> = {};
@@ -41,6 +53,32 @@ export default function WantToReadScreen({ onAddBook }: WantToReadScreenProps) {
   }
 
   useEffect(() => { fetchBooks(); }, []);
+
+  // Immediately flip the want_to_read review → status: read, then open the review flow
+  async function handleFinishReading(book: BookWithReviews) {
+    setPromotingId(book.id);
+    try {
+      const wtrReview = book.reviews.find(r => r.status === 'want_to_read');
+      if (!wtrReview) return;
+
+      // Update status to 'read' immediately so the book leaves the Want to Read tab
+      const { error } = await supabase
+        .from('reviews')
+        .update({ status: 'read' })
+        .eq('id', wtrReview.id);
+      if (error) throw error;
+
+      // Remove from local state instantly
+      setBooks(prev => prev.filter(b => b.id !== book.id));
+
+      // Open the review completion flow
+      setFinishingBook(book);
+    } catch (e) {
+      console.error('[finish reading]', e);
+    } finally {
+      setPromotingId(null);
+    }
+  }
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -84,19 +122,35 @@ export default function WantToReadScreen({ onAddBook }: WantToReadScreenProps) {
         ) : (
           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-x-4 gap-y-6">
             {books.map(book => (
-              <button key={book.id} onClick={() => setSelectedBook(book)} className="text-left group">
-                <BookCover
-                  url={book.cover_image_url}
-                  title={book.title}
-                  author={book.author}
-                  size="md"
-                  className="w-full group-hover:shadow-md transition-shadow"
-                />
-                <div className="mt-2">
-                  <p className="text-xs font-medium text-stone-800 line-clamp-2 leading-snug">{book.title}</p>
-                  <p className="text-xs text-stone-400 mt-0.5 truncate">{book.author}</p>
-                </div>
-              </button>
+              <div key={book.id} className="flex flex-col">
+                <button
+                  onClick={() => setSelectedBook(book)}
+                  className="text-left group flex-1"
+                >
+                  <BookCover
+                    url={book.cover_image_url}
+                    title={book.title}
+                    author={book.author}
+                    size="md"
+                    className="w-full group-hover:shadow-md transition-shadow"
+                  />
+                  <div className="mt-2">
+                    <p className="text-xs font-medium text-stone-800 line-clamp-2 leading-snug">{book.title}</p>
+                    <p className="text-xs text-stone-400 mt-0.5 truncate">{book.author}</p>
+                  </div>
+                </button>
+                <button
+                  onClick={e => { e.stopPropagation(); handleFinishReading(book); }}
+                  disabled={promotingId === book.id}
+                  className="mt-2 flex items-center justify-center gap-1 py-1.5 border border-stone-200 rounded-lg text-xs font-medium text-stone-600 hover:bg-stone-900 hover:text-white hover:border-stone-900 transition-all disabled:opacity-50"
+                >
+                  {promotingId === book.id
+                    ? <Loader2 size={12} className="animate-spin" />
+                    : <BookCheck size={12} />
+                  }
+                  I've Finished Reading This
+                </button>
+              </div>
             ))}
           </div>
         )}
@@ -108,6 +162,15 @@ export default function WantToReadScreen({ onAddBook }: WantToReadScreenProps) {
           reviews={selectedBook.reviews}
           onClose={() => setSelectedBook(null)}
           onRefresh={() => { setSelectedBook(null); fetchBooks(); }}
+        />
+      )}
+
+      {finishingBook && (
+        <ReviewModal
+          existingBook={finishingBook}
+          completeReview
+          onClose={() => setFinishingBook(null)}
+          onSaved={() => setFinishingBook(null)}
         />
       )}
     </div>

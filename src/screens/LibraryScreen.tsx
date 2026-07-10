@@ -15,12 +15,11 @@ interface BookWithReviews extends Book {
   reviews: Review[];
 }
 
-type FilterTab = 'all' | 'read' | 'want_to_read' | 'backlog';
+type FilterTab = 'all' | 'read' | 'backlog';
 
 const filterLabel: Record<FilterTab, string> = {
   all: 'All',
   read: 'Read',
-  want_to_read: 'Want to Read',
   backlog: 'Backlog',
 };
 
@@ -105,6 +104,7 @@ export default function LibraryScreen() {
     const { data: reviewsData } = await supabase
       .from('reviews')
       .select('*')
+      .neq('status', 'want_to_read')
       .order('created_at', { ascending: true });
     const { data: booksData } = await supabase
       .from('books')
@@ -117,7 +117,9 @@ export default function LibraryScreen() {
         if (!reviewsMap[r.book_id]) reviewsMap[r.book_id] = [];
         reviewsMap[r.book_id].push(r);
       });
-      setBooks(booksData.map(b => ({ ...b, reviews: reviewsMap[b.id] ?? [] })));
+      // Only include books that have at least one non-want_to_read review
+      const filtered = booksData.filter(b => (reviewsMap[b.id] ?? []).length > 0);
+      setBooks(filtered.map(b => ({ ...b, reviews: reviewsMap[b.id] ?? [] })));
     }
     setLoading(false);
   }
@@ -156,9 +158,8 @@ export default function LibraryScreen() {
 
   const filteredBooks = books.filter(book => {
     const status = getBookStatus(book);
-    if (filter === 'read'         && status !== 'read')         return false;
-    if (filter === 'want_to_read' && status !== 'want_to_read') return false;
-    if (filter === 'backlog'      && status !== 'backlog')      return false;
+    if (filter === 'read'    && status !== 'read')    return false;
+    if (filter === 'backlog' && status !== 'backlog') return false;
     if (search) {
       const q = search.toLowerCase();
       return book.title.toLowerCase().includes(q) || book.author.toLowerCase().includes(q);
@@ -259,7 +260,7 @@ export default function LibraryScreen() {
           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-x-4 gap-y-6">
             {sortedBooks.map(book => {
               const status      = getBookStatus(book);
-              const needsReview = status === 'backlog' || status === 'want_to_read';
+              const needsReview = status === 'backlog';
               const displayGenres = book.genres ?? [];
 
               return (
@@ -276,11 +277,6 @@ export default function LibraryScreen() {
                         size="md"
                         className="w-full group-hover:shadow-md transition-shadow"
                       />
-                      {status === 'want_to_read' && (
-                        <div className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-white shadow flex items-center justify-center text-xs">
-                          🔖
-                        </div>
-                      )}
                     </div>
                     <div className="mt-2">
                       <p className="text-xs font-medium text-stone-800 line-clamp-2 leading-snug">
@@ -298,7 +294,6 @@ export default function LibraryScreen() {
                       {(() => {
                         const badge = <ScoreBadge book={book} reviews={book.reviews} />;
                         if (badge) return <div className="mt-1">{badge}</div>;
-                        if (status === 'want_to_read') return <p className="text-xs text-stone-400 mt-1">Want to read</p>;
                         if (status === 'backlog') return <p className="text-xs text-stone-400 mt-1">Backlog</p>;
                         return null;
                       })()}
@@ -311,7 +306,7 @@ export default function LibraryScreen() {
                       className="mt-2 flex items-center justify-center gap-1 py-1.5 border border-stone-200 rounded-lg text-xs font-medium text-stone-600 hover:bg-stone-900 hover:text-white hover:border-stone-900 transition-all"
                     >
                       <BookCheck size={12} />
-                      {status === 'want_to_read' ? "I've Finished Reading This" : 'Complete Review'}
+                      Complete Review
                     </button>
                   )}
                 </div>
