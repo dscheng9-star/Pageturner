@@ -13,7 +13,7 @@ import {
   bucketForScore,
 } from '../lib/elo';
 import { fetchBookOpinions } from '../lib/claudeOpinions';
-import { getBookGenreGroup, type GenreGroupName } from '../lib/genreGroups';
+import { getBookGenreGroup } from '../lib/genreGroups';
 import type { Book, Review, MatchupResultType } from '../lib/database.types';
 import type { BookOpinions } from '../lib/claudeOpinions';
 
@@ -377,14 +377,12 @@ export default function EloMatchupModal({ newBook, library, review, onDone }: El
   const progress = currentIndex + 1;
   const total    = opponents.length;
 
-  const newGroup = getBookGenreGroup(newBook);
-  const opponentGroup = getBookGenreGroup(opponent);
-  const isCrossGroup = !!newGroup && !!opponentGroup && newGroup !== opponentGroup;
-  const contextLabel = !newGroup || !opponentGroup
-    ? null
-    : isCrossGroup
-      ? 'Cross-genre comparison'
-      : `Comparing within ${newGroup.replace(/_/g, ' ').toLowerCase()}`;
+  const newGroup = getBookGenreGroup(newBook, library);
+  const opponentGroup = getBookGenreGroup(opponent, library);
+  const isCrossGroup = newGroup !== opponentGroup;
+  const contextLabel = isCrossGroup
+    ? 'Cross-genre comparison'
+    : `Comparing within ${newGroup.replace(/_/g, ' ').toLowerCase()}`;
 
   return (
     <>
@@ -403,9 +401,7 @@ export default function EloMatchupModal({ newBook, library, review, onDone }: El
 
           <p className="text-sm text-stone-600 text-center">Which did you prefer?</p>
 
-          {contextLabel && (
-            <p className="text-xs text-stone-400 text-center -mt-2">{contextLabel}</p>
-          )}
+          <p className="text-xs text-stone-400 text-center -mt-2">{contextLabel}</p>
 
           <div className="grid grid-cols-2 gap-4">
             <button

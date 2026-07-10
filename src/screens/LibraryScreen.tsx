@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Plus, Search, Filter, BookCheck } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Plus, Search, Filter, BookCheck, Loader2 } from 'lucide-react';
 import BookCover from '../components/BookCover';
 import AddBookModal from './AddBookModal';
 import ReviewModal from './ReviewModal';
@@ -35,6 +35,67 @@ export default function LibraryScreen() {
     existing: BookWithReviews;
     googleBook: GoogleBook;
   } | null>(null);
+
+  const [reclassifyState, setReclassifyState] = useState<{
+    active: boolean;
+    current: number;
+    total: number;
+    done: boolean;
+  }>({ active: false, current: 0, total: 0, done: false });
+  const reclassifyRanRef = useRef(false);
+
+  const GENERIC_GENRES = new Set(['Fiction', 'Nonfiction']);
+
+  function needsReclassification(book: Book): boolean {
+    if (!book.genres || book.genres.length === 0) return true;
+    if (book.genres.length === 1 && GENERIC_GENRES.has(book.genres[0])) return true;
+    // Single-word generic genres (not in any specific group)
+    return book.genres.every(g => GENERIC_GENRES.has(g) || g.split(' ').length === 1);
+  }
+
+  async function handleReclassifyGenres() {
+    if (reclassifyState.active) return;
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+
+    const toReclassify = books.filter(needsReclassification);
+    if (toReclassify.length === 0) {
+      setReclassifyState({ active: false, current: 0, total: 0, done: true });
+      return;
+    }
+
+    setReclassifyState({ active: true, current: 0, total: toReclassify.length, done: false });
+
+    for (let i = 0; i < toReclassify.length; i++) {
+      const book = toReclassify[i];
+      setReclassifyState(prev => ({ ...prev, current: i }));
+      try {
+        const res = await fetch('/api/classify-genre', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            bookTitle: book.title,
+            bookAuthor: book.author,
+            bookDescription: book.description ?? '',
+          }),
+        });
+        if (!res.ok) continue;
+        const genres = await res.json();
+        if (Array.isArray(genres) && genres.length > 0) {
+          await supabase.from('books').update({ genres }).eq('id', book.id);
+        }
+      } catch (err) {
+        console.error('[reclassify]', book.title, err);
+      }
+    }
+
+    setReclassifyState({ active: false, current: toReclassify.length, total: toReclassify.length, done: true });
+    await fetchBooks();
+  }
 
   async function fetchBooks() {
     setLoading(true);
@@ -258,6 +319,30 @@ export default function LibraryScreen() {
         <p className="px-6 pb-6 text-xs text-stone-400">
           {sortedBooks.length} {sortedBooks.length === 1 ? 'book' : 'books'}
         </p>
+      )}
+
+      {!loading && books.length > 0 && !reclassifyState.done && !reclassifyState.active && (
+        <div className="px-6 pb-6">
+          <button
+            onClick={handleReclassifyGenres}
+            className="text-xs text-stone-400 hover:text-stone-600 transition-colors underline underline-offset-2"
+          >
+            Reclassify book genres
+          </button>
+        </div>
+      )}
+
+      {reclassifyState.active && (
+        <div className="px-6 pb-6 flex items-center gap-2 text-xs text-stone-500">
+          <Loader2 size={12} className="animate-spin" />
+          Updating genres... ({reclassifyState.current}/{reclassifyState.total} books)
+        </div>
+      )}
+
+      {!reclassifyState.active && reclassifyState.done && (
+        <div className="px-6 pb-6 text-xs text-stone-500">
+          Genres updated. {reclassifyState.total} {reclassifyState.total === 1 ? 'book' : 'books'} reclassified.
+        </div>
       )}
 
       {/* Modals */}

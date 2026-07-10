@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { getBookGenreGroup, canBooksMatch, type GenreGroupName } from './genreGroups';
+import { getBookGenreGroup, canBooksMatch } from './genreGroups';
 import type { Book, MatchupResultType, TierBucket } from './database.types';
 
 // Bucket score ranges (display scale 0–10)
@@ -103,14 +103,14 @@ export function selectMatchupCandidates(
   count: number
 ): Book[] {
   const newBucket = newBook.tier ?? bucketForScore(newBook.elo_score);
-  const newGroup = getBookGenreGroup(newBook);
+  const newGroup = getBookGenreGroup(newBook, library);
 
   // Only match against books that pass the genre compatibility check
   // AND are in the same or adjacent ELO bucket
   const eligible = library.filter(b => {
     if (b.id === newBook.id) return false;
     const bBucket = b.tier ?? bucketForScore(b.elo_score);
-    return bucketsAreAdjacent(newBucket, bBucket) && canBooksMatch(newBook, b);
+    return bucketsAreAdjacent(newBucket, bBucket) && canBooksMatch(newBook, b, library);
   });
 
   if (eligible.length === 0) return [];
@@ -118,9 +118,9 @@ export function selectMatchupCandidates(
   // Cap matchups at the number of eligible opponents
   const actualCount = Math.min(count, eligible.length);
 
-  const sameGroup = eligible.filter(b => getBookGenreGroup(b) === newGroup);
+  const sameGroup = eligible.filter(b => getBookGenreGroup(b, library) === newGroup);
   const crossGroup = eligible.filter(b => {
-    const g = getBookGenreGroup(b);
+    const g = getBookGenreGroup(b, library);
     return g !== newGroup;
   });
 
@@ -147,12 +147,6 @@ export function selectMatchupCandidates(
   }
 
   return picked.slice(0, actualCount);
-}
-
-/** Returns the genre group name for display, or null if the book has no group. */
-export function getMatchupContextLabel(book: Book): { group: GenreGroupName | null; isCrossGroup: boolean } | null {
-  const group = getBookGenreGroup(book);
-  return group ? { group, isCrossGroup: false } : null;
 }
 
 // ---------- full recalculation from matchup history ----------
