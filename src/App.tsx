@@ -9,6 +9,7 @@ import AddBookModal from './screens/AddBookModal';
 import ReviewModal from './screens/ReviewModal';
 import LoginPage from './screens/LoginPage';
 import type { GoogleBook } from './lib/googleBooks';
+import { BookDecorations } from './components/BookDecorations';
 
 type Tab = 'library' | 'want_to_read' | 'recommendations';
 
@@ -87,7 +88,8 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-white flex flex-col">
+    <div className="min-h-screen bg-white flex flex-col relative overflow-hidden">
+      <BookDecorations />
       {/* Desktop header */}
       <header className="hidden sm:flex items-center justify-between px-8 py-4 border-b border-stone-100 sticky top-0 bg-white z-20">
         <div className="flex items-center gap-2.5">

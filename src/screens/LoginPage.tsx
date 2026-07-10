@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { BookMarked, Chrome } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { OpenBook, BookStack, Quill, ManuscriptPage } from '../components/BookDecorations';
 
 export default function LoginPage() {
   const [loading, setLoading] = useState(false);
@@ -23,8 +24,12 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-stone-50 flex flex-col items-center justify-center px-6">
-      <div className="w-full max-w-sm">
+    <div className="min-h-screen bg-stone-50 flex flex-col items-center justify-center px-6 relative overflow-hidden">
+      <OpenBook style={{ top: '8%', left: '6%', width: 200, height: 150, transform: 'rotate(-10deg)' }} />
+      <BookStack style={{ top: '70%', left: '8%', width: 140, height: 126, transform: 'rotate(8deg)' }} />
+      <Quill style={{ top: '15%', left: '85%', width: 90, height: 112, transform: 'rotate(15deg)' }} />
+      <ManuscriptPage style={{ top: '65%', left: '88%', width: 110, height: 122, transform: 'rotate(-8deg)' }} />
+      <div className="w-full max-w-sm relative z-10">
         {/* Logo */}
         <div className="flex flex-col items-center mb-10">
           <div className="w-14 h-14 rounded-2xl bg-stone-900 flex items-center justify-center mb-4 shadow-md">

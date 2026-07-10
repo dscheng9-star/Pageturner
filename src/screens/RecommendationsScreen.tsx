@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Sparkles, Loader2, BookOpen, AlertCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import BookCover from '../components/BookCover';
+import { Bookshelf, Quill } from '../components/BookDecorations';
 
 interface Recommendation {
   title: string;
@@ -75,8 +76,10 @@ export default function RecommendationsScreen() {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto">
-      <div className="max-w-2xl mx-auto px-6 py-10">
+    <div className="flex-1 overflow-y-auto relative">
+      <Bookshelf style={{ top: '5%', left: '3%', width: 140, height: 101, transform: 'rotate(-6deg)' }} />
+      <Quill style={{ top: '55%', left: '88%', width: 70, height: 87, transform: 'rotate(12deg)' }} />
+      <div className="max-w-2xl mx-auto px-6 py-10 relative z-10">
         {/* Header */}
         <div className="text-center mb-8">
           <div className="w-14 h-14 rounded-2xl bg-stone-100 flex items-center justify-center mx-auto mb-4">
