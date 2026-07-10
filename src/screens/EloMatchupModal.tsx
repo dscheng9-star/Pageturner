@@ -7,7 +7,11 @@ import { supabase } from '../lib/supabase';
 import {
   tierBucket,
   tierSeedScore,
-  selectMatchupCandidates,
+  getMatchupConfig,
+  evaluateStreak,
+  shouldContinueSession,
+  selectNextOpponent,
+  getKFactor,
   recalculateEloFromMatchups,
   calcEloUpdate,
   bucketForScore,
@@ -16,6 +20,7 @@ import { fetchBookOpinions } from '../lib/claudeOpinions';
 import { getBookGenreGroup } from '../lib/genreGroups';
 import type { Book, Review, MatchupResultType } from '../lib/database.types';
 import type { BookOpinions } from '../lib/claudeOpinions';
+import type { MatchupRecord, StreakState } from '../lib/elo';
 
 type Tier = 'bad' | 'okay' | 'loved';
 type Phase = 'tier' | 'opinions' | 'matchup' | 'saving';
@@ -26,12 +31,6 @@ interface EloMatchupModalProps {
   review: Review;
   isResuming?: boolean;
   onDone: () => void;
-}
-
-function matchupCount(librarySize: number): number {
-  if (librarySize < 10) return 4;
-  if (librarySize <= 30) return 6;
-  return 8;
 }
 
 // --- Step progress indicator ---
@@ -76,40 +75,6 @@ function StepProgress({
   );
 }
 
-// --- Lock review confirmation ---
-function LockConfirmDialog({
-  onConfirm,
-  onCancel,
-}: {
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
-      <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 space-y-4">
-        <h3 className="font-semibold text-stone-900">Lock this review?</h3>
-        <p className="text-sm text-stone-600 leading-relaxed">
-          Lock this review without completing it? You won't be able to edit it but can still add a new review entry for this book.
-        </p>
-        <div className="flex gap-3 pt-1">
-          <button
-            onClick={onCancel}
-            className="flex-1 py-2.5 border border-stone-200 rounded-xl text-sm text-stone-600 hover:bg-stone-50 transition-colors"
-          >
-            Keep going
-          </button>
-          <button
-            onClick={onConfirm}
-            className="flex-1 py-2.5 bg-stone-900 text-white rounded-xl text-sm font-medium hover:bg-stone-700 transition-colors"
-          >
-            Lock it
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // --- Resume banner ---
 function ResumeBanner({
   dateSet,
@@ -145,31 +110,77 @@ function ResumeBanner({
   );
 }
 
+// --- Lock review confirmation ---
+function LockConfirmDialog({
+  onConfirm,
+  onCancel,
+}: {
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+      <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 space-y-4">
+        <h3 className="font-semibold text-stone-900">Lock this review?</h3>
+        <p className="text-sm text-stone-600 leading-relaxed">
+          Lock this review without completing it? You won't be able to edit it but can still add a new review entry for this book.
+        </p>
+        <div className="flex gap-3 pt-1">
+          <button
+            onClick={onCancel}
+            className="flex-1 py-2.5 border border-stone-200 rounded-xl text-sm text-stone-600 hover:bg-stone-50 transition-colors"
+          >
+            Keep going
+          </button>
+          <button
+            onClick={onConfirm}
+            className="flex-1 py-2.5 bg-stone-900 text-white rounded-xl text-sm font-medium hover:bg-stone-700 transition-colors"
+          >
+            Lock it
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- Adaptive status label ---
+function adaptiveStatusLabel(streak: StreakState, count: number, wrappingUp: boolean): string {
+  if (wrappingUp) return 'Range found — wrapping up';
+  if (streak === 'winning_streak') return 'On a winning streak — finding the ceiling...';
+  if (streak === 'losing_streak')  return 'Finding the floor...';
+  return `Finding your book's ranking... (${count} comparison${count === 1 ? '' : 's'} so far)`;
+}
+
 export default function EloMatchupModal({ newBook, library, review, isResuming = false, onDone }: EloMatchupModalProps) {
-  // Determine resume phase from existing review step state
   const resumePhase = (): Phase => {
-    if (!review.tier_complete) return 'tier';
+    if (!review.tier_complete)     return 'tier';
     if (!review.opinions_complete) return 'opinions';
     if (!review.matchups_complete) return 'matchup';
-    return 'matchup'; // already complete, just show matchups
+    return 'matchup';
   };
 
   const [phase, setPhase] = useState<Phase>(resumePhase);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [opponents, setOpponents] = useState<Book[]>([]);
   const [seededBook, setSeededBook] = useState<Book>(newBook);
   const [error, setError] = useState('');
   const [showLockConfirm, setShowLockConfirm] = useState(false);
 
-  // Step state (start from review's current values)
-  const [tierDone, setTierDone] = useState(review.tier_complete);
+  // Step completion state (start from review's current values)
+  const [tierDone, setTierDone]         = useState(review.tier_complete);
   const [opinionsDone, setOpinionsDone] = useState(review.opinions_complete);
   const [matchupsDone, setMatchupsDone] = useState(review.matchups_complete);
 
+  // Adaptive session state
+  const config = getMatchupConfig(library.length);
+  const [results, setResults]       = useState<MatchupRecord[]>([]);
+  const [opponent, setOpponent]     = useState<Book | null>(null);
+  const [wrappingUp, setWrappingUp] = useState(false);
+  const [sessionDone, setSessionDone] = useState(false);
+
   // Opinion fetching — starts on mount
-  const [opinions, setOpinions] = useState<BookOpinions | null>(null);
+  const [opinions, setOpinions]             = useState<BookOpinions | null>(null);
   const [opinionsFetching, setOpinionsFetching] = useState(true);
-  const [opinionsError, setOpinionsError] = useState<string | null>(null);
+  const [opinionsError, setOpinionsError]   = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -179,21 +190,18 @@ export default function EloMatchupModal({ newBook, library, review, isResuming =
       return fetchBookOpinions(newBook.title, newBook.author, token);
     })
       .then(result => { if (!cancelled) setOpinions(result); })
-      .catch(err => { if (!cancelled) setOpinionsError(err instanceof Error ? err.message : 'Failed'); })
-      .finally(() => { if (!cancelled) setOpinionsFetching(false); });
+      .catch(err   => { if (!cancelled) setOpinionsError(err instanceof Error ? err.message : 'Failed'); })
+      .finally(()  => { if (!cancelled) setOpinionsFetching(false); });
     return () => { cancelled = true; };
   }, [newBook.title, newBook.author]);
 
-  // If resuming past tier, seed opponents from library
+  // When entering matchup phase, pick the first opponent
   useEffect(() => {
-    if (review.tier_complete && opponents.length === 0) {
-      const bucket = newBook.tier ?? bucketForScore(newBook.elo_score);
-      const count  = matchupCount(library.length);
-      const seeded = { ...newBook };
-      setSeededBook(seeded);
-      setOpponents(selectMatchupCandidates(seeded, library, count));
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    if (phase !== 'matchup' || sessionDone) return;
+    const next = selectNextOpponent(seededBook, library, [], library);
+    setOpponent(next);
+    if (!next) setSessionDone(true);
+  }, [phase]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function markReviewComplete(updates: {
     tier_complete?: boolean;
@@ -205,8 +213,8 @@ export default function EloMatchupModal({ newBook, library, review, isResuming =
   }
 
   async function handleTierSelect(tier: Tier) {
-    const bucket     = tierBucket(tier);
-    const seedScore  = tierSeedScore(tier);
+    const bucket    = tierBucket(tier);
+    const seedScore = tierSeedScore(tier);
     await supabase
       .from('books')
       .update({ elo_score: seedScore, tier: bucket })
@@ -216,10 +224,6 @@ export default function EloMatchupModal({ newBook, library, review, isResuming =
     setSeededBook(seeded);
     setTierDone(true);
     await markReviewComplete({ tier_complete: true });
-
-    const count      = matchupCount(library.length);
-    const candidates = selectMatchupCandidates(seeded, library, count);
-    setOpponents(candidates);
     setPhase('opinions');
   }
 
@@ -233,26 +237,27 @@ export default function EloMatchupModal({ newBook, library, review, isResuming =
     setOpinionsDone(true);
     await markReviewComplete({ opinions_complete: true });
 
-    if (opponents.length === 0) {
-      // No eligible opponents — mark complete and exit
+    // Check if there are any eligible opponents before entering matchup phase
+    const firstOpponent = selectNextOpponent(seededBook, library, [], library);
+    if (!firstOpponent) {
       setMatchupsDone(true);
-      await markReviewComplete({
-        matchups_complete: true,
-        review_status: 'complete',
-      });
+      await markReviewComplete({ matchups_complete: true, review_status: 'complete' });
       onDone();
     } else {
+      setOpponent(firstOpponent);
       setPhase('matchup');
     }
   }
 
   async function handleMatchupResult(result: MatchupResultType, winnerIsLeft: boolean) {
-    const opponent = opponents[currentIndex];
-    const isLast   = currentIndex >= opponents.length - 1;
+    if (!opponent) return;
 
-    if (result !== 'skip') {
+    const isSkip  = result === 'skip';
+    const outcome = isSkip ? null : (winnerIsLeft ? 'win' : 'loss') as 'win' | 'loss';
+
+    if (!isSkip) {
       const winnerId = winnerIsLeft ? seededBook.id : opponent.id;
-      const loserId  = winnerIsLeft ? opponent.id : seededBook.id;
+      const loserId  = winnerIsLeft ? opponent.id   : seededBook.id;
 
       const { data: { session } } = await supabase.auth.getSession();
       const userId = session?.user.id;
@@ -265,22 +270,41 @@ export default function EloMatchupModal({ newBook, library, review, isResuming =
       });
       if (insertErr) { setError(insertErr.message); return; }
 
-      // Update seeded book's in-memory score for subsequent matchups
-      if (result !== 'skip') {
-        const wBucket = seededBook.tier ?? bucketForScore(seededBook.elo_score);
-        const oBucket = opponent.tier    ?? bucketForScore(opponent.elo_score);
-        const { newA } = calcEloUpdate(
-          seededBook.elo_score,
-          opponent.elo_score,
-          winnerIsLeft ? wBucket : oBucket,
-          winnerIsLeft ? oBucket : wBucket,
-          result
-        );
-        if (winnerIsLeft) setSeededBook(b => ({ ...b, elo_score: newA }));
+      // Streak-aware K factor for faster convergence
+      const streak  = evaluateStreak(results);
+      const wBucket = seededBook.tier ?? bucketForScore(seededBook.elo_score);
+      const oBucket = opponent.tier   ?? bucketForScore(opponent.elo_score);
+      const k       = getKFactor(wBucket, oBucket, streak, results.length + 1);
+
+      // Always update seededBook's in-memory score so adaptive targeting stays accurate.
+      // calcEloUpdate(A=seeded, B=opponent, result='win') means A won.
+      if (winnerIsLeft) {
+        // seededBook won
+        const { newA } = calcEloUpdate(seededBook.elo_score, opponent.elo_score, wBucket, oBucket, result, k);
+        setSeededBook(b => ({ ...b, elo_score: newA }));
+      } else {
+        // opponent won — compute from opponent's perspective, take newB as seeded's new score
+        const { newB } = calcEloUpdate(opponent.elo_score, seededBook.elo_score, oBucket, wBucket, result, k);
+        setSeededBook(b => ({ ...b, elo_score: newB }));
       }
     }
 
-    if (isLast) {
+    // Build new results array
+    const newRecord: MatchupRecord = { outcome: outcome ?? 'draw', opponentId: opponent.id };
+    const newResults = isSkip ? results : [...results, newRecord];
+
+    if (!isSkip) {
+      setResults(newResults);
+    }
+
+    // Decide whether session continues
+    const continueSession = isSkip
+      ? shouldContinueSession(results, config)
+      : shouldContinueSession(newResults, config);
+
+    if (!continueSession) {
+      // Wrap up
+      setWrappingUp(true);
       setPhase('saving');
       setMatchupsDone(true);
       try {
@@ -289,13 +313,32 @@ export default function EloMatchupModal({ newBook, library, review, isResuming =
       } catch (e) {
         console.error('ELO recalc error:', e);
       }
-      await markReviewComplete({
-        matchups_complete: true,
-        review_status: 'complete',
-      });
+      await markReviewComplete({ matchups_complete: true, review_status: 'complete' });
       onDone();
     } else {
-      setCurrentIndex(i => i + 1);
+      // Pick the next opponent adaptively
+      const updatedResults = isSkip ? results : newResults;
+      const nextOpponent = selectNextOpponent(
+        seededBook,
+        library,
+        updatedResults,
+        library,
+      );
+      if (!nextOpponent) {
+        // No more eligible opponents — finish
+        setPhase('saving');
+        setMatchupsDone(true);
+        try {
+          const { data: allBooks } = await supabase.from('books').select('*');
+          if (allBooks) await recalculateEloFromMatchups(allBooks);
+        } catch (e) {
+          console.error('ELO recalc error:', e);
+        }
+        await markReviewComplete({ matchups_complete: true, review_status: 'complete' });
+        onDone();
+      } else {
+        setOpponent(nextOpponent);
+      }
     }
   }
 
@@ -408,8 +451,8 @@ export default function EloMatchupModal({ newBook, library, review, isResuming =
     );
   }
 
-  // matchup phase
-  if (opponents.length === 0) {
+  // matchup phase — no eligible opponent
+  if (!opponent) {
     return (
       <Modal title="All done" onClose={onDone}>
         <div className="p-8 text-center space-y-4">
@@ -425,14 +468,15 @@ export default function EloMatchupModal({ newBook, library, review, isResuming =
     );
   }
 
-  const opponent = opponents[currentIndex];
-  const progress = currentIndex + 1;
-  const total    = opponents.length;
+  // matchup phase
+  const streak       = evaluateStreak(results);
+  const statusLabel  = adaptiveStatusLabel(streak, results.length, wrappingUp);
+  const progressPct  = Math.min((results.length / config.max) * 100, 100);
 
-  const newGroup = getBookGenreGroup(newBook, library);
+  const newGroup      = getBookGenreGroup(newBook, library);
   const opponentGroup = getBookGenreGroup(opponent, library);
-  const isCrossGroup = newGroup !== opponentGroup;
-  const contextLabel = isCrossGroup
+  const isCrossGroup  = newGroup !== opponentGroup;
+  const contextLabel  = isCrossGroup
     ? 'Cross-genre comparison'
     : `Comparing within ${newGroup.replace(/_/g, ' ').toLowerCase()}`;
 
@@ -449,18 +493,22 @@ export default function EloMatchupModal({ newBook, library, review, isResuming =
           />
         )}
         <div className="p-6 space-y-5">
-          <div className="flex items-center gap-3">
-            <div className="flex-1 h-1.5 bg-stone-100 rounded-full overflow-hidden">
+          {/* Adaptive progress header */}
+          <div className="space-y-1.5">
+            <p className="text-xs text-stone-500 text-center">{statusLabel}</p>
+            <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden">
               <div
-                className="h-full bg-stone-900 rounded-full transition-all duration-300"
-                style={{ width: `${(currentIndex / total) * 100}%` }}
+                className={`h-full rounded-full transition-all duration-500 ${
+                  streak === 'winning_streak' ? 'bg-emerald-500' :
+                  streak === 'losing_streak'  ? 'bg-amber-500'   :
+                  'bg-stone-900'
+                }`}
+                style={{ width: `${progressPct}%` }}
               />
             </div>
-            <span className="text-xs text-stone-400 tabular-nums">{progress} / {total}</span>
           </div>
 
           <p className="text-sm text-stone-600 text-center">Which did you prefer?</p>
-
           <p className="text-xs text-stone-400 text-center -mt-2">{contextLabel}</p>
 
           <div className="grid grid-cols-2 gap-4">

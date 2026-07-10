@@ -68,19 +68,132 @@ function bucketsAreAdjacent(a: TierBucket, b: TierBucket): boolean {
   return false;
 }
 
+// ---------- adaptive session config ----------
+export interface MatchupConfig {
+  min: number;
+  standard: number;
+  max: number;
+}
+
+export function getMatchupConfig(librarySize: number): MatchupConfig {
+  if (librarySize < 10) return { min: 3, standard: 4, max: 8 };
+  if (librarySize <= 30) return { min: 4, standard: 6, max: 10 };
+  return { min: 5, standard: 8, max: 12 };
+}
+
+// ---------- streak evaluation ----------
+export type StreakState = 'winning_streak' | 'losing_streak' | 'mixed' | 'neutral';
+
+export interface MatchupRecord {
+  outcome: 'win' | 'loss' | 'draw';
+  opponentId: string;
+}
+
+export function evaluateStreak(results: MatchupRecord[]): StreakState {
+  if (results.length < 2) return 'neutral';
+
+  const recent = results.slice(-3);
+  const wins   = recent.filter(r => r.outcome === 'win').length;
+  const losses = recent.filter(r => r.outcome === 'loss').length;
+
+  if (wins === 3) return 'winning_streak';
+  if (losses === 3) return 'losing_streak';
+  if (wins >= 1 && losses >= 1) return 'mixed';
+  return 'neutral';
+}
+
+/** True when the most recent result breaks the prior streak. */
+export function isStreakBreak(results: MatchupRecord[]): boolean {
+  if (results.length < 2) return false;
+  const streakBefore = evaluateStreak(results.slice(0, -1));
+  if (streakBefore === 'winning_streak' && results[results.length - 1].outcome === 'loss') return true;
+  if (streakBefore === 'losing_streak'  && results[results.length - 1].outcome === 'win')  return true;
+  return false;
+}
+
+/** Decide whether the adaptive session should continue. */
+export function shouldContinueSession(
+  results: MatchupRecord[],
+  config: MatchupConfig,
+): boolean {
+  const count  = results.length;
+  const streak = evaluateStreak(results);
+
+  if (count >= config.max) return false;
+  if (count < config.min)  return true;
+
+  // Past minimum: stop if streak just broke or is neutral/mixed
+  if (isStreakBreak(results)) return false;
+  if (streak === 'winning_streak' || streak === 'losing_streak') return true;
+  return false;
+}
+
+// ---------- adaptive opponent selection ----------
+export function selectNextOpponent(
+  currentBook: Book,
+  eligibleBooks: Book[],
+  results: MatchupRecord[],
+  library: Book[],
+): Book | null {
+  const streak       = evaluateStreak(results);
+  const currentScore = currentBook.elo_score;
+  const seenIds      = new Set(results.map(r => r.opponentId));
+
+  const newBucket = currentBook.tier ?? bucketForScore(currentScore);
+  const candidates = eligibleBooks.filter(b => {
+    if (b.id === currentBook.id) return false;
+    if (seenIds.has(b.id))       return false;
+    const bBucket = b.tier ?? bucketForScore(b.elo_score);
+    return bucketsAreAdjacent(newBucket, bBucket) && canBooksMatch(currentBook, b, library);
+  });
+
+  if (candidates.length === 0) return null;
+
+  let targetScore: number;
+  if (streak === 'winning_streak') {
+    targetScore = currentScore + 1.5;
+  } else if (streak === 'losing_streak') {
+    targetScore = currentScore - 1.5;
+  } else {
+    targetScore = currentScore;
+  }
+
+  const sorted = [...candidates].sort(
+    (a, b) => Math.abs(a.elo_score - targetScore) - Math.abs(b.elo_score - targetScore)
+  );
+
+  // Pick randomly from the top 3 closest
+  const pool = sorted.slice(0, 3);
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+// ---------- streak-aware K factor ----------
+export function getKFactor(
+  bucketA: TierBucket,
+  bucketB: TierBucket,
+  streak: StreakState,
+  matchupNumber: number,
+): number {
+  const baseK       = bucketA === bucketB ? K_SAME : K_CROSS;
+  const earlyBonus  = matchupNumber <= 2 ? 1.5 : 1.0;
+  const streakMult  = (streak === 'winning_streak' || streak === 'losing_streak') ? 1.3 : 1.0;
+  return baseK * earlyBonus * streakMult;
+}
+
 // ---------- matchup ELO update (bucket-clamped) ----------
 export function calcEloUpdate(
   scoreA: number,
   scoreB: number,
   bucketA: TierBucket,
   bucketB: TierBucket,
-  result: MatchupResultType
+  result: MatchupResultType,
+  kOverride?: number,
 ): { newA: number; newB: number } {
   if (result === 'skip') return { newA: scoreA, newB: scoreB };
 
   const eloA = scoreToElo(scoreA);
   const eloB = scoreToElo(scoreB);
-  const K = bucketA === bucketB ? K_SAME : K_CROSS;
+  const K    = kOverride ?? (bucketA === bucketB ? K_SAME : K_CROSS);
 
   const expA = 1 / (1 + Math.pow(10, (eloB - eloA) / SCALE));
   const expB = 1 - expA;
@@ -96,7 +209,7 @@ export function calcEloUpdate(
   };
 }
 
-// ---------- matchup candidate selection ----------
+// ---------- matchup candidate selection (kept for initial seeding) ----------
 export function selectMatchupCandidates(
   newBook: Book,
   library: Book[],
@@ -105,8 +218,6 @@ export function selectMatchupCandidates(
   const newBucket = newBook.tier ?? bucketForScore(newBook.elo_score);
   const newGroup = getBookGenreGroup(newBook, library);
 
-  // Only match against books that pass the genre compatibility check
-  // AND are in the same or adjacent ELO bucket
   const eligible = library.filter(b => {
     if (b.id === newBook.id) return false;
     const bBucket = b.tier ?? bucketForScore(b.elo_score);
@@ -115,14 +226,10 @@ export function selectMatchupCandidates(
 
   if (eligible.length === 0) return [];
 
-  // Cap matchups at the number of eligible opponents
   const actualCount = Math.min(count, eligible.length);
 
-  const sameGroup = eligible.filter(b => getBookGenreGroup(b, library) === newGroup);
-  const crossGroup = eligible.filter(b => {
-    const g = getBookGenreGroup(b, library);
-    return g !== newGroup;
-  });
+  const sameGroup  = eligible.filter(b => getBookGenreGroup(b, library) === newGroup);
+  const crossGroup = eligible.filter(b => getBookGenreGroup(b, library) !== newGroup);
 
   const byProximity = (a: Book, b: Book) =>
     Math.abs(a.elo_score - newBook.elo_score) - Math.abs(b.elo_score - newBook.elo_score);
@@ -130,17 +237,15 @@ export function selectMatchupCandidates(
   sameGroup.sort(byProximity);
   crossGroup.sort(byProximity);
 
-  // 80% same-group, 20% cross-group
-  const sameCount = Math.min(Math.round(actualCount * 0.8), sameGroup.length);
+  const sameCount  = Math.min(Math.round(actualCount * 0.8), sameGroup.length);
   const crossCount = Math.min(actualCount - sameCount, crossGroup.length);
-  const extra = actualCount - sameCount - crossCount;
+  const extra      = actualCount - sameCount - crossCount;
 
   const picked = [
     ...sameGroup.slice(0, sameCount + extra),
     ...crossGroup.slice(0, crossCount),
   ];
 
-  // Fisher-Yates shuffle
   for (let i = picked.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [picked[i], picked[j]] = [picked[j], picked[i]];
@@ -158,13 +263,11 @@ export async function recalculateEloFromMatchups(books: Book[]): Promise<void> {
 
   if (!matchups || matchups.length === 0) return;
 
-  // Build a bucket map from current DB values (authoritative tier assignment)
   const bucketMap: Record<string, TierBucket> = {};
   for (const b of books) {
     bucketMap[b.id] = b.tier ?? bucketForScore(b.elo_score);
   }
 
-  // Start each book at its bucket seed score
   const scores: Record<string, number> = {};
   for (const b of books) {
     scores[b.id] = BUCKET_SEEDS[bucketMap[b.id]];
