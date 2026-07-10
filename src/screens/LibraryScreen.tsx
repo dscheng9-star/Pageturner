@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { Plus, Search, Filter, BookCheck, Loader2 } from 'lucide-react';
 import BookCover from '../components/BookCover';
+import ScoreBadge from '../components/ScoreBadge';
 import AddBookModal from './AddBookModal';
 import ReviewModal from './ReviewModal';
 import BookDetailModal from './BookDetailModal';
 import DuplicateBookDialog from './DuplicateBookDialog';
 import { supabase } from '../lib/supabase';
+import { hasCompleteScore } from '../components/ScoreBadge';
 import type { Book, Review, ReviewStatus } from '../lib/database.types';
 import type { GoogleBook } from '../lib/googleBooks';
 
@@ -163,7 +165,14 @@ export default function LibraryScreen() {
     return true;
   });
 
-  const sortedBooks  = [...filteredBooks].sort((a, b) => b.elo_score - a.elo_score);
+  const sortedBooks = [...filteredBooks].sort((a, b) => {
+    const aScored = hasCompleteScore(a.reviews);
+    const bScored = hasCompleteScore(b.reviews);
+    if (aScored && !bScored) return -1;
+    if (!aScored && bScored) return 1;
+    if (aScored && bScored) return b.elo_score - a.elo_score;
+    return a.title.localeCompare(b.title);
+  });
   const ratedLibrary = books.filter(b =>
     b.reviews.some(r => r.status === 'read' || r.status === 'backlog')
   );
@@ -249,7 +258,6 @@ export default function LibraryScreen() {
           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-x-4 gap-y-6">
             {sortedBooks.map(book => {
               const status      = getBookStatus(book);
-              const hasScore    = book.reviews.some(r => r.status === 'read' || r.status === 'backlog');
               const needsReview = status === 'backlog' || status === 'want_to_read';
               const displayGenres = book.genres ?? [];
 
@@ -286,16 +294,13 @@ export default function LibraryScreen() {
                         </span>
                       )}
 
-                      {hasScore ? (
-                        <p className="text-xs font-semibold text-stone-700 mt-1 tabular-nums">
-                          {book.elo_score.toFixed(1)}
-                          <span className="font-normal text-stone-400"> / 10</span>
-                        </p>
-                      ) : status === 'want_to_read' ? (
-                        <p className="text-xs text-stone-400 mt-1">Want to read</p>
-                      ) : status === 'backlog' ? (
-                        <p className="text-xs text-stone-400 mt-1">Backlog</p>
-                      ) : null}
+                      {(() => {
+                        const badge = <ScoreBadge book={book} reviews={book.reviews} />;
+                        if (badge) return <div className="mt-1">{badge}</div>;
+                        if (status === 'want_to_read') return <p className="text-xs text-stone-400 mt-1">Want to read</p>;
+                        if (status === 'backlog') return <p className="text-xs text-stone-400 mt-1">Backlog</p>;
+                        return null;
+                      })()}
                     </div>
                   </button>
 

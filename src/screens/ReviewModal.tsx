@@ -8,7 +8,7 @@ import type { Book, Review, ReviewStatus, ReviewEntryType } from '../lib/databas
 import type { GoogleBook } from '../lib/googleBooks';
 import { extractCoverUrl, extractIsbn } from '../lib/googleBooks';
 
-type Mode = 'choose' | 'just_finished' | 'already_read' | 'quick' | 'deep' | 'complete_review';
+type Mode = 'choose' | 'date' | 'just_finished' | 'already_read' | 'quick' | 'deep' | 'complete_review';
 
 interface ReviewModalProps {
   googleBook?: GoogleBook;
@@ -51,14 +51,14 @@ export default function ReviewModal({
   onSaved,
   library = [],
 }: ReviewModalProps) {
-  const initialMode: Mode = completeReview ? 'complete_review' : 'choose';
+  const initialMode: Mode = completeReview ? 'complete_review' : isReread ? 'date' : 'choose';
   const [mode, setMode] = useState<Mode>(initialMode);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [savedState, setSavedState] = useState<SavedState | null>(null);
 
   const [reviewText, setReviewText] = useState('');
-  const [dateFinished, setDateFinished] = useState('');
+  const [dateFinished, setDateFinished] = useState(() => new Date().toISOString().slice(0, 10));
 
   const title       = existingBook?.title  ?? googleBook?.volumeInfo.title ?? '';
   const author      = existingBook?.author ?? googleBook?.volumeInfo.authors?.join(', ') ?? '';
@@ -114,6 +114,21 @@ export default function ReviewModal({
       const { id: userId, } = session.user;
 
       const book = await getOrCreateBook(userId, session.access_token);
+
+      // For re-reads, increment read_count from the previous review
+      let readCount = 1;
+      if (isReread) {
+        const { data: prevReviews } = await supabase
+          .from('reviews')
+          .select('read_count')
+          .eq('book_id', book.id)
+          .order('created_at', { ascending: false })
+          .limit(1);
+        if (prevReviews && prevReviews.length > 0) {
+          readCount = (prevReviews[0].read_count ?? 1) + 1;
+        }
+      }
+
       const { data: rev, error: revErr } = await supabase
         .from('reviews')
         .insert({
@@ -127,7 +142,7 @@ export default function ReviewModal({
           matchups_complete: false,
           review_text: reviewText || null,
           user_added_opinion: null,
-          read_count: 1,
+          read_count: readCount,
           date_finished: dateFinished || null,
           is_reread: isReread,
         })
@@ -178,9 +193,36 @@ export default function ReviewModal({
     </div>
   );
 
+  if (mode === 'date') {
+    const nextMode: Mode = isReread ? 'quick' : 'just_finished';
+    return (
+      <Modal title={isReread ? 'Log a re-read' : 'I just finished this'} onClose={onClose}>
+        {bookHeader}
+        <div className="p-6 space-y-5">
+          <div>
+            <h3 className="text-base font-semibold text-stone-900 mb-3">When did you finish this book?</h3>
+            <input
+              type="date"
+              value={dateFinished}
+              onChange={e => setDateFinished(e.target.value)}
+              className="w-full px-3 py-2.5 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-stone-900"
+            />
+          </div>
+          {error && <p className="text-sm text-red-500">{error}</p>}
+          <button
+            onClick={() => setMode(nextMode)}
+            className="w-full py-3 bg-stone-900 text-white rounded-xl font-medium hover:bg-stone-700 transition-colors flex items-center justify-center gap-2"
+          >
+            Continue
+          </button>
+        </div>
+      </Modal>
+    );
+  }
+
   if (mode === 'quick' || mode === 'complete_review') {
     return (
-      <Modal title={mode === 'complete_review' ? 'Complete Review' : 'Quick Review'} onClose={onClose}>
+      <Modal title={mode === 'complete_review' ? 'Complete Review' : isReread ? 'Quick Re-read Review' : 'Quick Review'} onClose={onClose}>
         {bookHeader}
         <div className="p-6 space-y-5">
           <div>
@@ -193,17 +235,6 @@ export default function ReviewModal({
               rows={4}
               placeholder="What did you think?"
               className="w-full px-3 py-2.5 border border-stone-200 rounded-xl text-sm resize-none focus:outline-none focus:ring-2 focus:ring-stone-900"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-stone-700 mb-2">
-              Date finished <span className="text-stone-400 font-normal">(optional)</span>
-            </label>
-            <input
-              type="date"
-              value={dateFinished}
-              onChange={e => setDateFinished(e.target.value)}
-              className="px-3 py-2.5 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-stone-900"
             />
           </div>
           {error && <p className="text-sm text-red-500">{error}</p>}
@@ -232,17 +263,6 @@ export default function ReviewModal({
               rows={8}
               placeholder="Share your full thoughts on this book…"
               className="w-full px-3 py-2.5 border border-stone-200 rounded-xl text-sm resize-none focus:outline-none focus:ring-2 focus:ring-stone-900"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-stone-700 mb-2">
-              Date finished <span className="text-stone-400 font-normal">(optional)</span>
-            </label>
-            <input
-              type="date"
-              value={dateFinished}
-              onChange={e => setDateFinished(e.target.value)}
-              className="px-3 py-2.5 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-stone-900"
             />
           </div>
           {error && <p className="text-sm text-red-500">{error}</p>}
@@ -321,7 +341,7 @@ export default function ReviewModal({
       <div className="p-6 space-y-3">
         <p className="text-sm text-stone-500 mb-4">How would you like to add this book?</p>
         <button
-          onClick={() => setMode('just_finished')}
+          onClick={() => setMode('date')}
           className="w-full flex items-start gap-3 p-4 border border-stone-200 rounded-xl hover:border-stone-400 hover:bg-stone-50 transition-all text-left"
         >
           <span className="text-2xl">📖</span>

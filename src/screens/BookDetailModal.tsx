@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { RotateCcw, Calendar, BookCheck } from 'lucide-react';
 import Modal from '../components/Modal';
 import BookCover from '../components/BookCover';
+import ScoreBadge from '../components/ScoreBadge';
 import ReviewModal from './ReviewModal';
 import { supabase } from '../lib/supabase';
 import type { Book, Review, OpinionSignal } from '../lib/database.types';
@@ -94,15 +95,10 @@ export default function BookDetailModal({
               </div>
             )}
 
-            {/* ELO score */}
-            {isRead && (
-              <div className="mt-3 flex items-baseline gap-1">
-                <span className="text-3xl font-bold text-stone-900 tabular-nums">
-                  {book.elo_score.toFixed(1)}
-                </span>
-                <span className="text-base text-stone-400 font-normal">/ 10</span>
-              </div>
-            )}
+            {/* Score / tier badge */}
+            <div className="mt-3">
+              <ScoreBadge book={book} reviews={reviews} size="lg" />
+            </div>
 
             {/* Actions */}
             <div className="mt-4 flex flex-wrap gap-2">
