@@ -165,14 +165,18 @@ export default function WantToReadScreen({ onAddBook }: WantToReadScreenProps) {
         />
       )}
 
-      {finishingBook && (
-        <ReviewModal
-          existingBook={finishingBook}
-          completeReview
-          onClose={() => setFinishingBook(null)}
-          onSaved={() => setFinishingBook(null)}
-        />
-      )}
+      {finishingBook && (() => {
+        const incompleteReview = finishingBook.reviews.find(r => r.review_status === 'incomplete');
+        return (
+          <ReviewModal
+            existingBook={finishingBook}
+            incompleteReview={incompleteReview}
+            completeReview={!incompleteReview}
+            onClose={() => setFinishingBook(null)}
+            onSaved={() => setFinishingBook(null)}
+          />
+        );
+      })()}
     </div>
   );
 }

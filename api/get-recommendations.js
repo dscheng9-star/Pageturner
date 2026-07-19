@@ -42,6 +42,7 @@ INSTRUCTIONS:
 - CRITICAL: Never recommend any book listed under COMPLETE LIBRARY — these are all books the reader has already read, wants to read, or has saved. Recommending any of these is a failure.
 - Include a mix of well-known and lesser-known titles
 - For series, recommend the first book only
+- Always recommend specific individual book titles, never series names. For example use 'The Final Empire' not 'Mistborn', use 'The Way of Kings' not 'The Stormlight Archive', use 'A Game of Thrones' not 'A Song of Ice and Fire'. If a series is known primarily by its series name, use the title of the first book in that series.
 - Weight recommendations heavily toward genres they rate highest
 
 Return ONLY a JSON array with exactly 5 objects, no markdown, no backticks, no other text:

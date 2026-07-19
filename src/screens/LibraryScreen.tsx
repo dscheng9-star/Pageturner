@@ -366,15 +366,19 @@ export default function LibraryScreen() {
           onSaved={() => { setPendingGoogleBook(null); fetchBooks(); }}
         />
       )}
-      {rereadBook && (
-        <ReviewModal
-          existingBook={rereadBook}
-          isReread
-          library={ratedLibrary}
-          onClose={() => setRereadBook(null)}
-          onSaved={() => { setRereadBook(null); fetchBooks(); }}
-        />
-      )}
+      {rereadBook && (() => {
+        const incompleteReview = rereadBook.reviews.find(r => r.review_status === 'incomplete');
+        return (
+          <ReviewModal
+            existingBook={rereadBook}
+            isReread={!incompleteReview}
+            incompleteReview={incompleteReview}
+            library={ratedLibrary}
+            onClose={() => setRereadBook(null)}
+            onSaved={() => { setRereadBook(null); fetchBooks(); }}
+          />
+        );
+      })()}
       {completeReviewBook && (() => {
         const incompleteReview = completeReviewBook.reviews.find(r => r.review_status === 'incomplete');
         return incompleteReview ? (
