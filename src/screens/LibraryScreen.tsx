@@ -7,7 +7,7 @@ import ReviewModal from './ReviewModal';
 import BookDetailModal from './BookDetailModal';
 import DuplicateBookDialog from './DuplicateBookDialog';
 import { supabase } from '../lib/supabase';
-import { hasCompleteScore } from '../components/ScoreBadge';
+import { hasCompleteScore, hasIncompleteReview } from '../components/ScoreBadge';
 import type { Book, Review, ReviewStatus } from '../lib/database.types';
 import type { GoogleBook } from '../lib/googleBooks';
 
@@ -168,8 +168,8 @@ export default function LibraryScreen() {
   });
 
   const sortedBooks = [...filteredBooks].sort((a, b) => {
-    const aScored = hasCompleteScore(a.reviews);
-    const bScored = hasCompleteScore(b.reviews);
+    const aScored = hasCompleteScore(a.reviews) && !hasIncompleteReview(a.reviews);
+    const bScored = hasCompleteScore(b.reviews) && !hasIncompleteReview(b.reviews);
     if (aScored && !bScored) return -1;
     if (!aScored && bScored) return 1;
     if (aScored && bScored) return b.elo_score - a.elo_score;

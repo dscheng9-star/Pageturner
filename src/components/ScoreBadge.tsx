@@ -22,6 +22,11 @@ export function hasCompleteScore(reviews: Review[]): boolean {
   );
 }
 
+/** Returns true if ANY review for this book is incomplete (mid-review, not yet finished). */
+export function hasIncompleteReview(reviews: Review[]): boolean {
+  return reviews.some(r => r.review_status === 'incomplete');
+}
+
 /** Returns true if the book has a tier assigned (from matchups or manual placement). */
 export function hasTier(book: Book): boolean {
   return book.tier !== null;
@@ -39,7 +44,7 @@ interface ScoreBadgeProps {
  * if the book has a tier. If neither, renders nothing.
  */
 export default function ScoreBadge({ book, reviews, size = 'sm' }: ScoreBadgeProps) {
-  const scored = hasCompleteScore(reviews);
+  const scored = hasCompleteScore(reviews) && !hasIncompleteReview(reviews);
 
   if (scored) {
     if (size === 'lg') {

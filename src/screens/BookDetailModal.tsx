@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { RotateCcw, Calendar, BookCheck } from 'lucide-react';
+import { RotateCcw, Calendar, BookCheck, Trash2, AlertTriangle } from 'lucide-react';
 import Modal from '../components/Modal';
 import BookCover from '../components/BookCover';
 import ScoreBadge from '../components/ScoreBadge';
 import ReviewModal from './ReviewModal';
 import { supabase } from '../lib/supabase';
+import { recalculateEloFromMatchups } from '../lib/elo';
 import type { Book, Review, OpinionSignal } from '../lib/database.types';
 
 const responseBadge: Record<string, string> = {
@@ -12,6 +13,78 @@ const responseBadge: Record<string, string> = {
   disagree: 'bg-red-100 text-red-600',
   neutral:  'bg-stone-100 text-stone-500',
 };
+
+function DeleteConfirmDialog({
+  canDeleteReviewEntry,
+  deleting,
+  error,
+  onCancel,
+  onDeleteReviewEntry,
+  onDeleteBook,
+}: {
+  canDeleteReviewEntry: boolean;
+  deleting: boolean;
+  error: string;
+  onCancel: () => void;
+  onDeleteReviewEntry: () => void;
+  onDeleteBook: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40">
+      <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 space-y-5">
+        <div className="flex items-start gap-3">
+          <div className="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+            <AlertTriangle size={20} className="text-red-600" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-stone-900">Delete</h3>
+            <p className="text-sm text-stone-500 mt-0.5">Choose what to remove. This cannot be undone.</p>
+          </div>
+        </div>
+
+        {error && (
+          <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>
+        )}
+
+        {/* Option A — delete latest review entry only */}
+        <button
+          onClick={onDeleteReviewEntry}
+          disabled={deleting || !canDeleteReviewEntry}
+          className="w-full text-left p-4 border-2 border-stone-200 rounded-xl hover:border-stone-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors group"
+        >
+          <p className="font-medium text-sm text-stone-900">Delete this review entry</p>
+          <p className="text-xs text-stone-400 mt-0.5">
+            {canDeleteReviewEntry
+              ? 'Removes the most recent review and its opinions/matchups. Keeps the book and other reviews.'
+              : 'Only available when the book has more than one review entry.'}
+          </p>
+        </button>
+
+        {/* Option B — delete the book entirely */}
+        <button
+          onClick={onDeleteBook}
+          disabled={deleting}
+          className="w-full text-left p-4 border-2 border-red-200 rounded-xl hover:border-red-400 bg-red-50/40 disabled:opacity-40 transition-colors"
+        >
+          <p className="font-medium text-sm text-red-700">Delete this book entirely</p>
+          <p className="text-xs text-red-500/80 mt-0.5">
+            This will permanently delete this book and all its review history.
+          </p>
+        </button>
+
+        <div className="flex gap-3 pt-1">
+          <button
+            onClick={onCancel}
+            disabled={deleting}
+            className="flex-1 py-2.5 border border-stone-200 rounded-xl text-sm text-stone-600 hover:bg-stone-50 disabled:opacity-50 transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 interface BookDetailModalProps {
   book: Book;
@@ -31,6 +104,9 @@ export default function BookDetailModal({
   onCompleteReview,
 }: BookDetailModalProps) {
   const [showReread, setShowReread] = useState(false);
+  const [showDelete, setShowDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
   const [opinionSignals, setOpinionSignals] = useState<OpinionSignal[]>([]);
   const [loadingOpinions, setLoadingOpinions] = useState(true);
 
@@ -80,15 +156,70 @@ export default function BookDetailModal({
     );
   }
 
+  async function handleDeleteReviewEntry() {
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      const latest = reviews[reviews.length - 1];
+      await supabase.from('opinion_signals').delete().eq('review_id', latest.id);
+      await supabase.from('reviews').delete().eq('id', latest.id);
+      const { data: allBooks } = await supabase.from('books').select('*');
+      if (allBooks) await recalculateEloFromMatchups(allBooks);
+      onRefresh();
+      onClose();
+    } catch (e: unknown) {
+      setDeleteError(e instanceof Error ? e.message : 'Failed to delete review entry');
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  async function handleDeleteBook() {
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      const reviewIds = reviews.map(r => r.id);
+      if (reviewIds.length > 0) {
+        await supabase.from('opinion_signals').delete().in('review_id', reviewIds);
+      }
+      await supabase.from('matchups').delete().or(`winner_book_id.eq.${book.id},loser_book_id.eq.${book.id}`);
+      await supabase.from('reviews').delete().eq('book_id', book.id);
+      await supabase.from('books').delete().eq('id', book.id);
+      const { data: allBooks } = await supabase.from('books').select('*');
+      if (allBooks) await recalculateEloFromMatchups(allBooks);
+      onRefresh();
+      onClose();
+    } catch (e: unknown) {
+      setDeleteError(e instanceof Error ? e.message : 'Failed to delete book');
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  const canDeleteReviewEntry = reviews.length > 1;
+
   return (
+    <>
     <Modal onClose={onClose} wide>
       <div className="p-6">
         {/* Header */}
         <div className="flex gap-5">
           <BookCover url={book.cover_image_url} title={book.title} author={book.author} size="xl" className="flex-shrink-0" />
           <div className="flex-1 min-w-0 pt-1">
-            <h2 className="text-xl font-semibold text-stone-900 leading-snug">{book.title}</h2>
-            <p className="text-stone-500 mt-1">{book.author}</p>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="text-xl font-semibold text-stone-900 leading-snug">{book.title}</h2>
+                <p className="text-stone-500 mt-1">{book.author}</p>
+              </div>
+              <button
+                onClick={() => { setShowDelete(true); setDeleteError(''); }}
+                title="Delete"
+                className="flex-shrink-0 flex items-center gap-1 text-xs text-stone-400 hover:text-red-600 transition-colors py-1 px-2"
+              >
+                <Trash2 size={14} />
+                Delete
+              </button>
+            </div>
 
             {/* Genre pills */}
             {displayGenres.length > 0 && (
@@ -229,5 +360,16 @@ export default function BookDetailModal({
         )}
       </div>
     </Modal>
+    {showDelete && (
+      <DeleteConfirmDialog
+        canDeleteReviewEntry={canDeleteReviewEntry}
+        deleting={deleting}
+        error={deleteError}
+        onCancel={() => setShowDelete(false)}
+        onDeleteReviewEntry={handleDeleteReviewEntry}
+        onDeleteBook={handleDeleteBook}
+      />
+    )}
+    </>
   );
 }
